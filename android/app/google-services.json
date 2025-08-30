@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "240515861982",
+    "project_id": "rutau-practica-iv",
+    "storage_bucket": "rutau-practica-iv.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:240515861982:android:19529bfa0b4d6bea80e14f",
+        "android_client_info": {
+          "package_name": "com.example.ruta_u"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZGAtXzbx5DDFkSlm2TFkPrl-draVwqRY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
