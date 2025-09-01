@@ -1,43 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ruta_u/main.dart'; // Asegúrate de que este import sea correcto
+import 'package:ruta_u/main.dart'; // Importa el archivo principal para acceder a las constantes de color
 
 // Pantalla para que el usuario seleccione su rol
-class RoleSelectionScreen extends StatefulWidget {
+class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
-
-  @override
-  State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
-}
-
-class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
-  final _firestore = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
-
-  Future<void> _updateUserRole(String role) async {
-    final user = _auth.currentUser;
-    if (user != null) {
-      try {
-        await _firestore.collection('usuarios').doc(user.uid).update({
-          'rol': role,
-        });
-        // Navegar a la pantalla de inicio de sesión
-        // Usamos pushNamedAndRemoveUntil para limpiar la pila de navegación
-        // y evitar que el usuario regrese a la pantalla de selección de rol.
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/login',
-          (route) => false,
-        );
-      } catch (e) {
-        // Manejar errores si la actualización falla
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al guardar el rol: $e')),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,11 +20,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
             children: <Widget>[
               const Text(
                 '¿Cómo quieres usar Ruta U?',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: primaryColor,
-                ),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: primaryColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
@@ -66,14 +28,20 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                 icon: Icons.directions_car,
                 title: 'Conductor',
                 description: 'Ofrece viajes y comparte gastos.',
-                onTap: () => _updateUserRole('conductor'),
+                onTap: () {
+                  // TODO: Guardar el rol en Firebase y navegar a la pantalla del conductor.
+                  Navigator.pushReplacementNamed(context, '/main_driver');
+                },
               ),
               const SizedBox(height: 20),
               RoleCard(
                 icon: Icons.person_pin,
                 title: 'Pasajero',
                 description: 'Encuentra viajes asequibles y seguros.',
-                onTap: () => _updateUserRole('pasajero'),
+                onTap: () {
+                  // TODO: Guardar el rol en Firebase y navegar a la pantalla del pasajero.
+                  Navigator.pushReplacementNamed(context, '/main_passenger');
+                },
               ),
             ],
           ),
@@ -83,7 +51,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
   }
 }
 
-// La clase RoleCard permanece igual
 class RoleCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -112,8 +79,7 @@ class RoleCard extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 title,
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(

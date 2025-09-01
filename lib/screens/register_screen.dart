@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ruta_u/main.dart'; // Importa el archivo principal para acceder a las constantes de color
+import 'package:ruta_u/main.dart'; 
 
-// Pantalla de registro
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -21,6 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _firestore = FirebaseFirestore.instance;
 
   bool _isLoading = false;
+  String? _selectedRole; // Variable para almacenar el rol seleccionado
 
   Future<void> _registerUser() async {
     final name = _nameController.text.trim();
@@ -28,9 +28,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+    // Valida que el rol se haya seleccionado
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty || _selectedRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor completa todos los campos')),
+        const SnackBar(content: Text('Por favor, completa todos los campos y selecciona tu rol')),
       );
       return;
     }
@@ -51,16 +52,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: password,
       );
 
-      // Guardar datos adicionales en Firestore
+      // Guardar el rol seleccionado en Firestore
       await _firestore.collection('usuarios').doc(userCredential.user!.uid).set({
         'nombre': name,
         'email': email,
-        'rol': 'pendiente', // luego lo defines en role_selection
+        'rol': _selectedRole, // Usa la variable de rol seleccionada
         'creado': FieldValue.serverTimestamp(),
       });
 
-      // Navegar a selección de rol
-      Navigator.pushReplacementNamed(context, '/role_selection');
+      // Navegar a la pantalla principal según el rol
+      if (_selectedRole == 'pasajero') {
+        Navigator.pushReplacementNamed(context, '/main_passenger');
+      } else if (_selectedRole == 'conductor') {
+        Navigator.pushReplacementNamed(context, '/main_driver');
+      }
+
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.message}')),
@@ -122,6 +128,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     labelText: 'Confirmar Contraseña',
                     prefixIcon: Icon(Icons.lock_outline, color: primaryColor),
                   ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  '¿Cómo quieres usar Ruta U?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedRole = 'conductor';
+                          });
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: _selectedRole == 'conductor' ? primaryColor : Colors.grey,
+                            width: 2.0,
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(Icons.directions_car, color: _selectedRole == 'conductor' ? primaryColor : Colors.grey),
+                            const SizedBox(height: 8),
+                            const Text('Conductor', style: TextStyle(fontSize: 16)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedRole = 'pasajero';
+                          });
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: _selectedRole == 'pasajero' ? primaryColor : Colors.grey,
+                            width: 2.0,
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(Icons.person, color: _selectedRole == 'pasajero' ? primaryColor : Colors.grey),
+                            const SizedBox(height: 8),
+                            const Text('Pasajero', style: TextStyle(fontSize: 16)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
