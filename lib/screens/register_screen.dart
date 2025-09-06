@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ruta_u/main.dart'; 
+import 'package:ruta_u/main.dart'; // Importa el archivo principal para acceder a las constantes de color
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -53,6 +53,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       // Guardar el rol seleccionado en Firestore
+      // Esta es la parte que intentamos depurar si no se guarda el documento
       await _firestore.collection('usuarios').doc(userCredential.user!.uid).set({
         'nombre': name,
         'email': email,
@@ -68,10 +69,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
     } on FirebaseAuthException catch (e) {
+      // Este bloque captura errores específicos de autenticación (ej: email ya en uso, contraseña débil)
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.message}')),
+        SnackBar(content: Text('Error de autenticación: ${e.message}')),
       );
+      // Imprime el error en la consola para una depuración más detallada
+      print('Error de Autenticación (FirebaseAuthException): ${e.code} - ${e.message}');
+    } on FirebaseException catch (e) { // <-- ¡ESTE ES EL BLOQUE AÑADIDO/CORREGIDO!
+      // Este bloque captura errores que vienen de servicios de Firebase como Firestore
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error de Firestore: ${e.message}')),
+      );
+      // Imprime el error en la consola para una depuración más detallada
+      print('Error de Firestore (FirebaseException): ${e.code} - ${e.message}');
+    } catch (e) {
+      // Este bloque captura cualquier otro tipo de error inesperado que no sea de Firebase
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error inesperado: ${e.toString()}')),
+      );
+      // Imprime el error en la consola para una depuración más detallada
+      print('Error Inesperado (catch all): ${e.toString()}');
     } finally {
+      // Siempre oculta el indicador de carga, sin importar si hubo un error o no
       setState(() => _isLoading = false);
     }
   }

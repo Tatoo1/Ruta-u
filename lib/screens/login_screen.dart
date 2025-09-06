@@ -80,6 +80,8 @@ ElevatedButton(
 
         // Redireccionamos según el rol
         if (userRole == 'pasajero') {
+          // CORRECCIÓN: Se cambia el nombre de la ruta a '/main_passenger'
+          // para que coincida con la definición en main.dart.
           Navigator.pushReplacementNamed(context, '/main_passenger');
         } else if (userRole == 'conductor') {
           Navigator.pushReplacementNamed(context, '/main_driver');
@@ -128,4 +130,4 @@ ElevatedButton(
       ),
     );
   }
-} // LAS PANTALLAS FUNCIONAN, REALIZAR AJUSTE EN LA CLASEE ROLE SELECTION Y FIREBASE PARA ASIGNAR ROLES
+}
