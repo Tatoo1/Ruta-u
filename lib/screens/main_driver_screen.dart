@@ -24,6 +24,10 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _originAddressController = TextEditingController();
   final _searchController = TextEditingController();
+  // Controladores para los datos del vehículo
+  final _vehicleColorController = TextEditingController();
+  final _vehiclePlateController = TextEditingController();
+  final _vehicleModelController = TextEditingController();
 
   bool _isLoading = false;
   int? _selectedSeats;
@@ -46,6 +50,9 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   void dispose() {
     _originAddressController.dispose();
     _searchController.dispose();
+    _vehicleColorController.dispose();
+    _vehiclePlateController.dispose();
+    _vehicleModelController.dispose();
     super.dispose();
   }
 
@@ -194,6 +201,11 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         'asientos_disponibles': _selectedSeats,
         'hora_salida': routeTime,
         'creado': FieldValue.serverTimestamp(),
+        'vehiculo': {
+          'color': _vehicleColorController.text,
+          'placa': _vehiclePlateController.text,
+          'modelo': _vehicleModelController.text,
+        },
       });
 
       setState(() {
@@ -203,6 +215,9 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         _selectedOriginAddress = null;
         _originAddressController.clear();
         _searchController.clear();
+        _vehicleColorController.clear();
+        _vehiclePlateController.clear();
+        _vehicleModelController.clear();
         _markers.removeWhere((marker) => marker.markerId.value == 'origin');
       });
 
@@ -213,10 +228,134 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al publicar la ruta: ${e.message}')),
       );
-      print('Error de Firestore: ${e.code} - ${e.message}');
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  // Nuevo método para borrar una ruta
+  Future<void> _deleteRoute(String routeId) async {
+    // Diálogo de confirmación antes de borrar
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Eliminación'),
+        content: const Text('¿Estás seguro de que deseas eliminar esta ruta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firestore.collection('rutas').doc(routeId).delete();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ruta eliminada con éxito.')),
+        );
+      } on FirebaseException catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al eliminar la ruta: ${e.message}')),
+        );
+      }
+    }
+  }
+
+  void _showUserProfile() {
+    final user = _auth.currentUser;
+    if (user != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => _buildUserProfileScreen(user.uid),
+        ),
+      );
+    }
+  }
+
+  Widget _buildUserProfileScreen(String userId) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Mi Perfil', style: TextStyle(color: Colors.white)),
+        backgroundColor: primaryColor,
+      ),
+      body: FutureBuilder<DocumentSnapshot>(
+        future: _firestore.collection('usuarios').doc(userId).get(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(child: Text('No se encontraron datos de usuario.'));
+          }
+
+          final userData = snapshot.data!.data() as Map<String, dynamic>;
+          final userName = userData['nombre'] ?? 'No disponible';
+          final userEmail = userData['email'] ?? 'No disponible';
+
+          return Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Center(
+                  child: Icon(Icons.person_pin, size: 100, color: primaryColor),
+                ),
+                const SizedBox(height: 24),
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildProfileInfoRow(Icons.person_outline, 'Nombre', userName),
+                        const Divider(),
+                        _buildProfileInfoRow(Icons.email_outlined, 'Email', userEmail),
+                        const Divider(),
+                        _buildProfileInfoRow(Icons.badge, 'ID de Usuario', userId),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildProfileInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: accentColor),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                const SizedBox(height: 4),
+                Text(value, style: const TextStyle(fontSize: 16)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -227,6 +366,10 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         appBar: AppBar(
           title: const Text('Ruta U - Conductor', style: TextStyle(color: Colors.white)),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.person, color: Colors.white),
+              onPressed: _showUserProfile,
+            ),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.white),
               onPressed: () async {
@@ -322,6 +465,31 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                       hintText: 'Universidad Central',
                       enabled: false,
                       prefixIcon: Icon(Icons.pin_drop, color: accentColor),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Nuevos campos para los datos del vehículo
+                  TextFormField(
+                    controller: _vehicleColorController,
+                    decoration: const InputDecoration(
+                      labelText: 'Color del vehículo',
+                      prefixIcon: Icon(Icons.palette, color: accentColor),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _vehiclePlateController,
+                    decoration: const InputDecoration(
+                      labelText: 'Placa del vehículo',
+                      prefixIcon: Icon(Icons.badge, color: accentColor),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _vehicleModelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Modelo del vehículo',
+                      prefixIcon: Icon(Icons.directions_car, color: accentColor),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -431,6 +599,10 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Text('Destino: ${destino ?? 'No especificado'}\nHora: $formattedTime'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _deleteRoute(ruta.id),
+                      ),
                       children: [
                         _buildReservationsList(ruta.id),
                       ],
