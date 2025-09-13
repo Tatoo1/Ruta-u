@@ -43,42 +43,22 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(child: Text('Error al cargar el perfil: ${snapshot.error}'));
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('No se encontraron datos de usuario.'));
+            return const Center(child: Text('Usuario no encontrado.'));
           }
-
           final userData = snapshot.data!.data() as Map<String, dynamic>;
-          final userName = userData['nombre'] ?? 'No disponible';
-          final userEmail = userData['email'] ?? 'No disponible';
-
           return Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Center(
-                  child: Icon(Icons.person_pin, size: 100, color: primaryColor),
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildProfileInfoRow(Icons.person_outline, 'Nombre', userName),
-                        const Divider(),
-                        _buildProfileInfoRow(Icons.email_outlined, 'Email', userEmail),
-                        const Divider(),
-                        _buildProfileInfoRow(Icons.badge, 'ID de Usuario', userId),
-                      ],
-                    ),
-                  ),
-                ),
+                Text('Nombre: ${userData['nombre']}', style: const TextStyle(fontSize: 18)),
+                const SizedBox(height: 8),
+                Text('Email: ${userData['email']}', style: const TextStyle(fontSize: 18)),
+                const SizedBox(height: 8),
+                Text('Rol: ${userData['rol']}', style: const TextStyle(fontSize: 18)),
               ],
             ),
           );
@@ -87,125 +67,46 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
     );
   }
 
-  Widget _buildProfileInfoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(icon, color: accentColor),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                const SizedBox(height: 4),
-                Text(value, style: const TextStyle(fontSize: 16)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _cancelReservation(String rutaId, String reservaId) async {
-    try {
-      await _firestore.runTransaction((transaction) async {
-        final rutaRef = _firestore.collection('rutas').doc(rutaId);
-        final rutaDoc = await transaction.get(rutaRef);
-        final currentSeats = rutaDoc.data()?['asientos_disponibles'] as int? ?? 0;
-        
-        transaction.delete(_firestore.collection('rutas').doc(rutaId).collection('reservas').doc(reservaId));
-        
-        transaction.update(rutaRef, {
-          'asientos_disponibles': currentSeats + 1,
-        });
-      });
-      
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Reserva cancelada correctamente.')),
-      );
-    } on FirebaseException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cancelar la reserva: ${e.message}')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ocurrió un error inesperado: $e')),
-      );
-    }
-  }
-
-  Future<void> _showCancellationConfirmationDialog(String rutaId, String reservaId) async {
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirmar cancelación'),
-          content: const SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text('¿Estás seguro de que deseas cancelar tu reserva para esta ruta?'),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('No'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: const Text('Sí'),
-              onPressed: () {
-                _cancelReservation(rutaId, reservaId);
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
+  // Método para manejar el cierre de sesión
+  Future<void> _signOut() async {
+    await _auth.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = _auth.currentUser;
-    final String? currentUserId = user?.uid;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ruta U - Pasajero', style: TextStyle(color: Colors.white)),
+        title: const Text('Rutas Disponibles', style: TextStyle(color: Colors.white)),
+        backgroundColor: primaryColor,
         actions: [
           IconButton(
-            icon: const Icon(Icons.person, color: Colors.white),
+            icon: const Icon(Icons.account_circle, color: Colors.white),
             onPressed: _showUserProfile,
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () async {
-              await _auth.signOut();
-              if (!mounted) return;
-              Navigator.pushReplacementNamed(context, '/');
-            },
+            onPressed: _signOut,
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SafeArea(
         child: Column(
-          children: <Widget>[
-            const Text(
-              'Rutas Publicadas',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor),
+          children: [
+            // Sección para filtrar rutas (puedes agregar filtros aquí)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Buscar rutas...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _firestore.collection('rutas').snapshots(),
@@ -214,13 +115,12 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                     return const Center(child: CircularProgressIndicator());
                   }
 
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error al cargar las rutas: ${snapshot.error}'));
+                  }
+
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'No hay rutas publicadas en este momento.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                      ),
-                    );
+                    return const Center(child: Text('No hay rutas disponibles en este momento.'));
                   }
 
                   final rutas = snapshot.data!.docs;
@@ -228,134 +128,68 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                   return ListView.builder(
                     itemCount: rutas.length,
                     itemBuilder: (context, index) {
-                      final ruta = rutas[index];
-                      final data = ruta.data() as Map<String, dynamic>;
-                      final rutaId = ruta.id;
-                      final idConductor = data['id_conductor'] as String?;
-                      
-                      final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
-                      final destino = (data['destino'] is Map) ? data['destino']['direccion'] as String? : (data['destino'] as String?);
-                      final asientosDisponibles = data['asientos_disponibles'] is int ? data['asientos_disponibles'] as int? : null;
-                      final horaSalida = (data['hora_salida'] as Timestamp?)?.toDate();
-                      
-                      final vehicleData = data['vehiculo'] as Map<String, dynamic>?;
-                      final vehicleColor = vehicleData?['color'] as String? ?? 'No especificado';
-                      final vehiclePlate = vehicleData?['placa'] as String? ?? 'No especificado';
-                      final vehicleModel = vehicleData?['modelo'] as String? ?? 'No especificado';
-
-                      final formattedTime = horaSalida != null ? DateFormat.jm().format(horaSalida) : 'Hora no definida';
+                      final ruta = rutas[index].data() as Map<String, dynamic>;
+                      final origen = ruta['origen_nombre'] ?? 'Ubicación Desconocida';
+                      final destino = ruta['destino_nombre'] ?? 'Destino Desconocido';
+                      final conductor = ruta['conductor_nombre'] ?? 'Conductor Desconocido';
+                      final hora = ruta['hora_salida'] != null
+                          ? DateFormat.Hm().format((ruta['hora_salida'] as Timestamp).toDate())
+                          : 'Hora Desconocida';
+                      final asientos = ruta['asientos_disponibles'] ?? 'N/A';
+                      final precio = ruta['precio'] ?? 'N/A';
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: StreamBuilder<QuerySnapshot>(
-                          stream: _firestore.collection('rutas').doc(rutaId).collection('reservas').where('pasajero_id', isEqualTo: currentUserId).snapshots(),
-                          builder: (context, reservaSnapshot) {
-                            bool hasReserved = reservaSnapshot.hasData && reservaSnapshot.data!.docs.isNotEmpty;
-                            String? reservaId = hasReserved ? reservaSnapshot.data!.docs.first.id : null;
-                            
-                            return Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Icon(Icons.drive_eta, color: accentColor, size: 40),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Origen: ${origen ?? 'No especificado'}',
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
-                                        ),
-                                        Text('Destino: ${destino ?? 'No especificado'}', style: const TextStyle(fontSize: 14)),
-                                        Text('Vehículo: $vehicleColor, $vehicleModel', style: const TextStyle(fontSize: 14)),
-                                        Text('Placa: $vehiclePlate', style: const TextStyle(fontSize: 14)),
-                                        Text('Hora de salida: $formattedTime', style: const TextStyle(fontSize: 14)),
-                                        Text('Asientos disponibles: ${asientosDisponibles ?? 0}', style: const TextStyle(fontSize: 14)),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  hasReserved
-                                      ? Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            ElevatedButton(
-                                              onPressed: null,
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.grey,
-                                              ),
-                                              child: const Text('Ruta Solicitada'),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            OutlinedButton(
-                                              onPressed: () {
-                                                if (reservaId != null) {
-                                                  _showCancellationConfirmationDialog(rutaId, reservaId);
-                                                }
-                                              },
-                                              child: const Text('Cancelar'),
-                                            ),
-                                          ],
-                                        )
-                                      : ElevatedButton(
-                                          onPressed: (asientosDisponibles == 0) ? null : () async {
-                                            if (currentUserId == null || idConductor == null) {
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Necesitas iniciar sesión para solicitar una ruta.')),
-                                              );
-                                              return;
-                                            }
-                                            
-                                            try {
-                                              final userDoc = await _firestore.collection('usuarios').doc(currentUserId).get();
-                                              final userData = userDoc.data();
-                                              final nombrePasajero = userData?['nombre'] ?? 'Pasajero Anónimo';
+                        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: ListTile(
+                          title: Text('$origen a $destino'),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Conductor: $conductor'),
+                              Text('Hora: $hora'),
+                              Text('Asientos disponibles: $asientos'),
+                              Text('Precio: $precio'),
+                            ],
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: () {
+                              final user = _auth.currentUser;
+                              if (user == null) {
+                                // Muestra un mensaje de error si el usuario no está autenticado
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('❌ Error: Debes iniciar sesión para solicitar una ruta.')),
+                                );
+                                return;
+                              }
 
-                                              await _firestore.runTransaction((transaction) async {
-                                                final rutaRef = _firestore.collection('rutas').doc(rutaId);
-                                                final rutaDoc = await transaction.get(rutaRef);
-                                                final currentSeats = rutaDoc.data()?['asientos_disponibles'] as int? ?? 0;
-                                                
-                                                if (currentSeats > 0) {
-                                                  transaction.update(rutaRef, {
-                                                    'asientos_disponibles': currentSeats - 1,
-                                                  });
-                                                  
-                                                  transaction.set(_firestore.collection('rutas').doc(rutaId).collection('reservas').doc(), {
-                                                    'pasajero_id': currentUserId,
-                                                    'pasajero_nombre': nombrePasajero,
-                                                    'hora_reserva': FieldValue.serverTimestamp(),
-                                                  });
-                                                } else {
-                                                  throw 'No hay asientos disponibles.';
-                                                }
-                                              });
+                              try {
+                                // Aquí se crea la solicitud de viaje
+                                _firestore.collection('solicitudes_viaje').add({
+                                  'id_ruta': rutas[index].id,
+                                  'id_conductor': ruta['id_conductor'],
+                                  'id_pasajero': user.uid, // Aseguramos que el ID del usuario esté presente
+                                  'estado': 'pendiente',
+                                  'timestamp': FieldValue.serverTimestamp(),
+                                });
 
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('✅ Solicitud de viaje enviada.')),
-                                              );
-                                            } on FirebaseException catch (e) {
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Error al solicitar la ruta: ${e.message}')),
-                                              );
-                                            } catch (e) {
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Ocurrió un error inesperado: $e')),
-                                              );
-                                            }
-                                          },
-                                          child: const Text('Solicitar'),
-                                        ),
-                                ],
-                              ),
-                            );
-                          },
+                                // Muestra un mensaje de éxito
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('✅ Solicitud de viaje enviada.')),
+                                );
+                              } on FirebaseException catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error al solicitar la ruta: ${e.message}')),
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Ocurrió un error inesperado: $e')),
+                                );
+                              }
+                            },
+                            child: const Text('Solicitar'),
+                          ),
                         ),
                       );
                     },
