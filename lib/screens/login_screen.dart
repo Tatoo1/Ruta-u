@@ -1,14 +1,95 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ruta_u/main.dart'; // Importa el archivo principal para acceder a las constantes de color
+import 'package:ruta_u/screens/main_passenger_screen.dart';
+import 'package:ruta_u/screens/main_driver_screen.dart';
 
-// Pantalla de inicio de sesión
-class LoginScreen extends StatelessWidget {
+// Definición de colores para consistencia
+const primaryColor = Color(0xFF6200EE);
+const accentColor = Color(0xFF03DAC6);
+
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
-  static final TextEditingController _emailController = TextEditingController();
-  static final TextEditingController _passwordController = TextEditingController();
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _auth = FirebaseAuth.instance;
+  final _firestore = FirebaseFirestore.instance;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    try {
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      if (userCredential.user != null) {
+        final userDoc = await _firestore
+            .collection('usuarios')
+            .doc(userCredential.user!.uid)
+            .get();
+
+        final userData = userDoc.data();
+        
+        // Manejamos el rol si es un String o una List
+        final dynamic rolData = userData?['rol'];
+        final List<String> userRoles;
+
+        if (rolData is String) {
+          // Si el rol es un String, lo convertimos a una lista
+          userRoles = [rolData];
+        } else if (rolData is List) {
+          // Si el rol es una lista, la casteamos
+          userRoles = rolData.cast<String>();
+        } else {
+          // Si el rol no existe o es de otro tipo, la lista estará vacía
+          userRoles = [];
+        }
+
+        // Priorizamos el rol de conductor si está presente
+        if (userRoles.contains('conductor')) {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (context) => const MainDriverScreen()));
+        } else if (userRoles.contains('pasajero')) {
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (context) => const MainPassengerScreen()));
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error: El rol del usuario no está definido.')),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      if (e.code == 'user-not-found') {
+        errorMessage = 'No existe un usuario con ese correo.';
+      } else if (e.code == 'wrong-password') {
+        errorMessage = 'Contraseña incorrecta.';
+      } else if (e.code == 'invalid-email') {
+        errorMessage = 'El formato del correo no es válido.';
+      } else {
+        errorMessage = "Error desconocido: ${e.message}";
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +102,7 @@ class LoginScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                // Logo de la Universidad Central
-                const Image(
-                  image: AssetImage('assets/logo.png'), // Agrega el logo de la universidad
-                  height: 150,
-                ),
+                const Icon(Icons.school, size: 100, color: primaryColor),
                 const SizedBox(height: 24),
                 const Text(
                   'Bienvenido a Ruta U',
@@ -45,6 +122,7 @@ class LoginScreen extends StatelessWidget {
                     labelText: 'Correo Institucional',
                     prefixIcon: Icon(Icons.email_outlined, color: primaryColor),
                   ),
+                  keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -56,63 +134,15 @@ class LoginScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-ElevatedButton(
-  onPressed: () async {
-    try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-
-      if (credential.user != null) {
-        // Obtenemos una referencia a la instancia de Firestore
-        final firestore = FirebaseFirestore.instance;
-
-        // Consultamos el documento del usuario usando su UID
-        final userDoc = await firestore
-            .collection('usuarios')
-            .doc(credential.user!.uid)
-            .get();
-
-        // Leemos el rol del documento
-        final userRole = userDoc.data()?['rol'];
-
-        // Redireccionamos según el rol
-        if (userRole == 'pasajero') {
-          // CORRECCIÓN: Se cambia el nombre de la ruta a '/main_passenger'
-          // para que coincida con la definición en main.dart.
-          Navigator.pushReplacementNamed(context, '/main_passenger');
-        } else if (userRole == 'conductor') {
-          Navigator.pushReplacementNamed(context, '/main_driver');
-        } else {
-          // Manejar caso de rol no definido
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error: El rol del usuario no está definido.')),
-          );
-        }
-      }
-    } on FirebaseAuthException catch (e) {
-      String mensajeError = "Error desconocido";
-      if (e.code == 'user-not-found') {
-        mensajeError = "No existe un usuario con ese correo.";
-      } else if (e.code == 'wrong-password') {
-        mensajeError = "Contraseña incorrecta.";
-      } else if (e.code == 'invalid-email') {
-        mensajeError = "El formato del correo no es válido.";
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(mensajeError)),
-      );
-    }
-  },
-  child: const Text(
-    'Iniciar Sesión',
-    style: TextStyle(fontSize: 18),
-  ),
-),
-
+                ElevatedButton(
+                  onPressed: _login,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Iniciar Sesión', style: TextStyle(fontSize: 18, color: Colors.white)),
+                ),
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: () {

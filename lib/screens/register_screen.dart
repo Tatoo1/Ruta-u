@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ruta_u/main.dart'; // Importa el archivo principal para acceder a las constantes de color
+import 'package:ruta_u/main.dart';
+import 'package:ruta_u/screens/main_driver_screen.dart';
+import 'package:ruta_u/screens/main_passenger_screen.dart';
+
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -20,18 +23,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _firestore = FirebaseFirestore.instance;
 
   bool _isLoading = false;
-  String? _selectedRole; // Variable para almacenar el rol seleccionado
+  String? _selectedRole;
 
   Future<void> _registerUser() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
+    List<String> userRoles = ['conductor', 'pasajero']; // Asigna ambos roles por defecto
 
     // Valida que el rol se haya seleccionado
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty || _selectedRole == null) {
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, completa todos los campos y selecciona tu rol')),
+        const SnackBar(content: Text('Por favor, completa todos los campos')),
       );
       return;
     }
@@ -42,7 +46,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-
+    
     try {
       setState(() => _isLoading = true);
 
@@ -52,51 +56,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: password,
       );
 
-      // Guardar el rol seleccionado en Firestore
-      // Esta es la parte que intentamos depurar si no se guarda el documento
       await _firestore.collection('usuarios').doc(userCredential.user!.uid).set({
         'nombre': name,
         'email': email,
-        'rol': _selectedRole, // Usa la variable de rol seleccionada
+        'rol': userRoles,
         'creado': FieldValue.serverTimestamp(),
       });
 
-      // Navegar a la pantalla principal según el rol
-      if (_selectedRole == 'pasajero') {
+      // Navegar a la pantalla principal según la elección del usuario o el rol por defecto
+      if (userRoles.contains('pasajero')) {
         Navigator.pushReplacementNamed(context, '/main_passenger');
-      } else if (_selectedRole == 'conductor') {
+      } else if (userRoles.contains('conductor')) {
         Navigator.pushReplacementNamed(context, '/main_driver');
       }
 
     } on FirebaseAuthException catch (e) {
-      // Este bloque captura errores específicos de autenticación (ej: email ya en uso, contraseña débil)
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error de autenticación: ${e.message}')),
       );
-      // Imprime el error en la consola para una depuración más detallada
       print('Error de Autenticación (FirebaseAuthException): ${e.code} - ${e.message}');
-    } on FirebaseException catch (e) { // <-- ¡ESTE ES EL BLOQUE AÑADIDO/CORREGIDO!
-      // Este bloque captura errores que vienen de servicios de Firebase como Firestore
+    } on FirebaseException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error de Firestore: ${e.message}')),
       );
-      // Imprime el error en la consola para una depuración más detallada
       print('Error de Firestore (FirebaseException): ${e.code} - ${e.message}');
     } catch (e) {
-      // Este bloque captura cualquier otro tipo de error inesperado que no sea de Firebase
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error inesperado: ${e.toString()}')),
       );
-      // Imprime el error en la consola para una depuración más detallada
       print('Error Inesperado (catch all): ${e.toString()}');
     } finally {
-      // Siempre oculta el indicador de carga, sin importar si hubo un error o no
       setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Definición de colores para consistencia
+    const primaryColor = Color(0xFF6200EE);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Registro'),

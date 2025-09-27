@@ -5,6 +5,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import 'dart:async';
 import 'package:intl/intl.dart';
+import 'package:ruta_u/screens/main_passenger_screen.dart'; // Importamos la pantalla de pasajero
+import 'package:ruta_u/screens/start_route_screen.dart'; // ¡Añadido! Pantalla de ruta activa
 import 'package:ruta_u/main.dart'; 
 
 // Definición de colores para consistencia
@@ -38,7 +40,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   
   LatLng? _selectedOriginCoordinates;
   String? _selectedOriginAddress;
-  final LatLng _destinationCoordinates = const LatLng(4.6046, -74.0655);
+  final LatLng _destinationCoordinates = const LatLng(4.6046, -74.0655); // Coordenadas de la UC (Bogotá)
 
   @override
   void initState() {
@@ -77,6 +79,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     });
 
     try {
+      // 1. Convertir coordenadas a dirección de texto
       List<geocoding.Placemark> placemarks = await geocoding.placemarkFromCoordinates(tappedCoordinates.latitude, tappedCoordinates.longitude);
       
       if (placemarks.isNotEmpty) {
@@ -88,6 +91,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           _originAddressController.text = formattedAddress;
           _selectedOriginAddress = formattedAddress;
           
+          // 2. Actualizar marcador en el mapa
           _markers.removeWhere((marker) => marker.markerId.value == 'origin');
           _markers.add(
             Marker(
@@ -123,6 +127,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     });
 
     try {
+      // 1. Convertir dirección de texto a coordenadas
       List<geocoding.Location> locations = await geocoding.locationFromAddress(_searchController.text);
       if (locations.isNotEmpty) {
         final location = locations.first;
@@ -131,6 +136,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         setState(() {
           _selectedOriginCoordinates = newOrigin;
           _selectedOriginAddress = _searchController.text;
+          
+          // 2. Actualizar marcador y centrar mapa
           _markers.removeWhere((marker) => marker.markerId.value == 'origin');
           _markers.add(
             Marker(
@@ -183,6 +190,14 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       return;
     }
 
+    // Validar que los campos del vehículo no estén vacíos
+    if (_vehicleColorController.text.isEmpty || _vehiclePlateController.text.isEmpty || _vehicleModelController.text.isEmpty) {
+       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, completa todos los detalles del vehículo.')),
+      );
+      return;
+    }
+
     try {
       setState(() => _isLoading = true);
 
@@ -206,6 +221,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           'placa': _vehiclePlateController.text,
           'modelo': _vehicleModelController.text,
         },
+        'estado': 'activa', // Estado inicial de la ruta
       });
 
       setState(() {
@@ -215,6 +231,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         _selectedOriginAddress = null;
         _originAddressController.clear();
         _searchController.clear();
+        // Limpiar también los datos del vehículo después de publicar
         _vehicleColorController.clear();
         _vehiclePlateController.clear();
         _vehicleModelController.clear();
@@ -256,6 +273,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
 
     if (confirm == true) {
       try {
+        // También se deberían eliminar las subcolecciones de reservas y mensajes si existen
         await _firestore.collection('rutas').doc(routeId).delete();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Ruta eliminada con éxito.')),
@@ -301,6 +319,10 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           final userData = snapshot.data!.data() as Map<String, dynamic>;
           final userName = userData['nombre'] ?? 'No disponible';
           final userEmail = userData['email'] ?? 'No disponible';
+          // Se asume que 'rol' es un campo de tipo List<String> en Firestore
+          final userRoles = (userData['rol'] as List<dynamic>?)?.cast<String>() ?? ['No disponible'];
+
+          final hasPasajeroRole = userRoles.contains('pasajero');
 
           return Padding(
             padding: const EdgeInsets.all(24.0),
@@ -323,11 +345,33 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                         const Divider(),
                         _buildProfileInfoRow(Icons.email_outlined, 'Email', userEmail),
                         const Divider(),
+                        _buildProfileInfoRow(Icons.account_box, 'Roles', userRoles.join(', ')),
+                        const Divider(),
                         _buildProfileInfoRow(Icons.badge, 'ID de Usuario', userId),
                       ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 24),
+                // Botón para conmutar a la vista de pasajero
+                if (hasPasajeroRole)
+                  Center(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.swap_horiz, color: Colors.white),
+                      label: const Text('Cambiar a Pasajero', style: TextStyle(color: Colors.white)),
+                      onPressed: () {
+                        // Navega a la pantalla principal del pasajero
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (context) => const MainPassengerScreen()),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
               ],
             ),
           );
@@ -365,6 +409,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ruta U - Conductor', style: TextStyle(color: Colors.white)),
+          backgroundColor: primaryColor,
           actions: [
             IconButton(
               icon: const Icon(Icons.person, color: Colors.white),
@@ -374,6 +419,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               icon: const Icon(Icons.logout, color: Colors.white),
               onPressed: () async {
                 await _auth.signOut();
+                if (!mounted) return;
                 Navigator.pushReplacementNamed(context, '/');
               },
             ),
@@ -413,6 +459,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           ),
           const SizedBox(height: 16),
           Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -435,40 +483,54 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    height: 300,
-                    child: Stack(
-                      children: [
-                        GoogleMap(
-                          onMapCreated: _onMapCreated,
-                          initialCameraPosition: CameraPosition(
-                            target: _destinationCoordinates,
-                            zoom: 14.0,
-                          ),
-                          markers: _markers,
-                          onTap: _onTapMap,
-                        ),
-                        if (_isLoading)
-                          Container(
-                            color: Colors.black.withOpacity(0.5),
-                            child: const Center(
-                              child: CircularProgressIndicator(color: Colors.white),
+                  // Mapa interactivo
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8.0),
+                    child: SizedBox(
+                      height: 300,
+                      child: Stack(
+                        children: [
+                          GoogleMap(
+                            onMapCreated: _onMapCreated,
+                            initialCameraPosition: CameraPosition(
+                              target: _destinationCoordinates,
+                              zoom: 14.0,
                             ),
+                            markers: _markers,
+                            onTap: _onTapMap,
+                            myLocationButtonEnabled: false,
+                            zoomControlsEnabled: false,
                           ),
-                      ],
+                          if (_isLoading)
+                            Container(
+                              color: Colors.black.withOpacity(0.5),
+                              child: const Center(
+                                child: CircularProgressIndicator(color: Colors.white),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _originAddressController,
+                    decoration: const InputDecoration(
+                      labelText: 'Origen Seleccionado',
+                      enabled: false,
+                      prefixIcon: Icon(Icons.location_on, color: primaryColor),
                     ),
                   ),
                   const SizedBox(height: 16),
                   const TextField(
                     decoration: InputDecoration(
                       labelText: 'Destino: Universidad Central',
-                      hintText: 'Universidad Central',
                       enabled: false,
                       prefixIcon: Icon(Icons.pin_drop, color: accentColor),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Nuevos campos para los datos del vehículo
+                  // Datos del vehículo
                   TextFormField(
                     controller: _vehicleColorController,
                     decoration: const InputDecoration(
@@ -493,11 +555,13 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // Asientos y Hora
                   DropdownButtonFormField<int>(
                     value: _selectedSeats,
                     decoration: const InputDecoration(
                       labelText: 'Asientos Disponibles',
                       prefixIcon: Icon(Icons.event_seat, color: accentColor),
+                      border: OutlineInputBorder(),
                     ),
                     items: List.generate(4, (index) {
                       final value = index + 1;
@@ -519,12 +583,19 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                       _selectedTime != null
                           ? 'Hora de salida: ${_selectedTime!.format(context)}'
                           : 'Seleccionar hora de salida',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
                     onTap: _selectTime,
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton(
                     onPressed: _isLoading ? null : _publishRoute,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                     child: _isLoading
                         ? const SizedBox(
                             width: 20,
@@ -579,6 +650,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                 );
               }
               final rutas = snapshot.data!.docs;
+              final now = DateTime.now();
+              
               return ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -586,25 +659,77 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                 itemBuilder: (context, index) {
                   final ruta = rutas[index];
                   final data = ruta.data() as Map<String, dynamic>;
+                  final rutaId = ruta.id;
+                  
                   final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
                   final destino = data['destino'] is String ? data['destino'] as String? : null;
                   final horaSalida = (data['hora_salida'] as Timestamp?)?.toDate();
                   final formattedTime = horaSalida != null ? DateFormat.jm().format(horaSalida) : 'Hora no definida';
 
+                  // Lógica para habilitar el botón:
+                  // Permitir iniciar la ruta si faltan 30 minutos o menos para la hora de salida
+                  // y la ruta no ha pasado hace más de 1 hora (para rutas olvidadas)
+                  final bool canStartRoute = horaSalida != null && 
+                      horaSalida.difference(now).inMinutes <= 30 && 
+                      horaSalida.isAfter(now.subtract(const Duration(hours: 1)));
+                  final String buttonText = canStartRoute ? 'Iniciar Ruta' : 'Ruta Pendiente';
+
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: ExpansionTile(
-                      title: Text(
-                        'Ruta: ${origen ?? 'No especificado'}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text('Destino: ${destino ?? 'No especificado'}\nHora: $formattedTime'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _deleteRoute(ruta.id),
-                      ),
+                    elevation: 4,
+                    child: Column(
                       children: [
-                        _buildReservationsList(ruta.id),
+                        ExpansionTile(
+                          title: Text(
+                            'Ruta: ${origen ?? 'No especificado'}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text('Destino: ${destino ?? 'No especificado'}\nHora: $formattedTime'),
+                          children: [
+                            _buildReservationsList(rutaId),
+                          ],
+                        ),
+                        // Fila de acciones (Iniciar Ruta y Eliminar)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Botón "Iniciar Ruta"
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: canStartRoute ? () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => StartRouteScreen(rutaId: rutaId),
+                                      ),
+                                    );
+                                  } : null, // Deshabilitar si no es el momento
+                                  icon: const Icon(Icons.navigation, color: Colors.white),
+                                  label: Text(buttonText, style: const TextStyle(color: Colors.white)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: canStartRoute ? accentColor : Colors.grey,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              // Botón "Eliminar"
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => _deleteRoute(rutaId),
+                                  tooltip: 'Eliminar Ruta',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -622,7 +747,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       stream: _firestore.collection('rutas').doc(rutaId).collection('reservas').snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
+          return const Center(child: CircularProgressIndicator());
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -635,17 +760,29 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         final reservas = snapshot.data!.docs;
 
         return Column(
-          children: reservas.map((reservaDoc) {
-            final reserva = reservaDoc.data() as Map<String, dynamic>;
-            final pasajeroNombre = reserva['pasajero_nombre'] ?? 'Nombre no disponible';
-            final pasajeroId = reserva['pasajero_id'];
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 4.0),
+              child: Text(
+                'Pasajeros (${reservas.length}):',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: primaryColor),
+              ),
+            ),
+            ...reservas.map((reservaDoc) {
+              final reserva = reservaDoc.data() as Map<String, dynamic>;
+              final pasajeroNombre = reserva['pasajero_nombre'] ?? 'Nombre no disponible';
+              final puntoRecogida = reserva['punto_recogida'] ?? 'Punto de recogida no definido';
 
-            return ListTile(
-              leading: const Icon(Icons.person),
-              title: Text(pasajeroNombre),
-              subtitle: Text('ID del pasajero: $pasajeroId'),
-            );
-          }).toList(),
+              return ListTile(
+                leading: const Icon(Icons.person, color: accentColor),
+                title: Text(pasajeroNombre),
+                subtitle: Text('Recogida: $puntoRecogida'),
+                dense: true,
+              );
+            }).toList(),
+            const SizedBox(height: 10),
+          ],
         );
       },
     );

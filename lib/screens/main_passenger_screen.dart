@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:ruta_u/screens/main_driver_screen.dart';
+// Importamos la pantalla del conductor (asegúrate de que esté disponible)
+import 'package:ruta_u/screens/start_route_screen.dart'; 
 
 // Definición de colores para consistencia
 const primaryColor = Color(0xFF6200EE);
@@ -18,6 +21,8 @@ class MainPassengerScreen extends StatefulWidget {
 class _MainPassengerScreenState extends State<MainPassengerScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
+
+  // --- LÓGICA DE PERFIL ---
 
   void _showUserProfile() {
     final user = _auth.currentUser;
@@ -52,6 +57,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
           final userData = snapshot.data!.data() as Map<String, dynamic>;
           final userName = userData['nombre'] ?? 'No disponible';
           final userEmail = userData['email'] ?? 'No disponible';
+          final userRoles = (userData['rol'] as List<dynamic>?)?.cast<String>() ?? [];
 
           return Padding(
             padding: const EdgeInsets.all(24.0),
@@ -79,6 +85,28 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                     ),
                   ),
                 ),
+                if (userRoles.contains('conductor')) ...[
+                  const SizedBox(height: 24),
+                  Center(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        // Navega a la pantalla principal del conductor usando el nombre de la ruta
+                        Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(builder: (context) => const MainDriverScreen()),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                      ),
+                      child: const Text(
+                        'Cambiar a Perfil Conductor',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );
@@ -106,6 +134,136 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // --- LÓGICA DE RESERVA Y CANCELACIÓN ---
+
+  Future<void> _requestRoute(String rutaId, String idConductor, String puntoRecogida) async {
+    final user = _auth.currentUser;
+    final currentUserId = user?.uid;
+
+    if (currentUserId == null || idConductor == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error de autenticación. Intenta iniciar sesión nuevamente.')),
+      );
+      return;
+    }
+    
+    // Validación para que el conductor no reserve su propia ruta
+    if (currentUserId == idConductor) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No puedes reservar tu propia ruta.')),
+      );
+      return;
+    }
+
+    try {
+      final userDoc = await _firestore.collection('usuarios').doc(currentUserId).get();
+      final userData = userDoc.data();
+      final nombrePasajero = userData?['nombre'] ?? 'Pasajero Anónimo';
+
+      await _firestore.runTransaction((transaction) async {
+        final rutaRef = _firestore.collection('rutas').doc(rutaId);
+        final rutaDoc = await transaction.get(rutaRef);
+        final currentSeats = rutaDoc.data()?['asientos_disponibles'] as int? ?? 0;
+        
+        if (currentSeats > 0) {
+          transaction.update(rutaRef, {
+            'asientos_disponibles': currentSeats - 1,
+          });
+          
+          // AÑADIENDO EL PUNTO DE RECOGIDA AQUÍ
+          transaction.set(_firestore.collection('rutas').doc(rutaId).collection('reservas').doc(), {
+            'pasajero_id': currentUserId,
+            'pasajero_nombre': nombrePasajero,
+            'punto_recogida': puntoRecogida, // <--- NUEVO CAMPO
+            'hora_reserva': FieldValue.serverTimestamp(),
+            'recogido': false, // Inicializamos el estado para el conductor
+          });
+        } else {
+          throw 'No hay asientos disponibles.';
+        }
+      });
+
+      if (!mounted) return;
+      // *** CORRECCIÓN APLICADA: Se eliminó la palabra clave 'const' de SnackBar ***
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Solicitud de viaje enviada. Punto de recogida: $puntoRecogida')),
+      );
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al solicitar la ruta: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ocurrió un error inesperado: $e')),
+      );
+    }
+  }
+  
+  // Dialogo modal para solicitar la dirección de recogida al pasajero
+  // Se ha modificado el tipo del parámetro asientosDisponibles para aceptar int? (aunque luego lo manejaremos como int)
+  Future<void> _showPickupInputDialog(String rutaId, String idConductor, int asientosDisponibles) async {
+    final TextEditingController pickupController = TextEditingController();
+    
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true, // Permitir cerrar tocando fuera
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirmar Reserva'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                const Text('Por favor, especifica tu punto exacto de recogida.'),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: pickupController,
+                  decoration: InputDecoration(
+                    labelText: 'Dirección de Recogida',
+                    hintText: 'Ej: Carrera 7 # 45-10 (Edificio A)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                    prefixIcon: const Icon(Icons.location_on, color: primaryColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reservar'),
+              onPressed: () {
+                final puntoRecogida = pickupController.text.trim();
+                if (puntoRecogida.isNotEmpty && asientosDisponibles > 0) {
+                  Navigator.of(context).pop(); // Cerrar el diálogo
+                  _requestRoute(rutaId, idConductor, puntoRecogida);
+                } else if (puntoRecogida.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Debes especificar una dirección de recogida.')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -182,6 +340,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ruta U - Pasajero', style: TextStyle(color: Colors.white)),
+        backgroundColor: primaryColor,
         actions: [
           IconButton(
             icon: const Icon(Icons.person, color: Colors.white),
@@ -235,7 +394,10 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                       
                       final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
                       final destino = (data['destino'] is Map) ? data['destino']['direccion'] as String? : (data['destino'] as String?);
-                      final asientosDisponibles = data['asientos_disponibles'] is int ? data['asientos_disponibles'] as int? : null;
+                      
+                      // Aseguramos que asientosDisponibles sea un int no nulo (usando 0 como fallback)
+                      final asientosDisponibles = (data['asientos_disponibles'] is int ? data['asientos_disponibles'] as int? : null) ?? 0;
+                      
                       final horaSalida = (data['hora_salida'] as Timestamp?)?.toDate();
                       
                       final vehicleData = data['vehiculo'] as Map<String, dynamic>?;
@@ -247,6 +409,8 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
 
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 8.0),
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: StreamBuilder<QuerySnapshot>(
                           stream: _firestore.collection('rutas').doc(rutaId).collection('reservas').where('pasajero_id', isEqualTo: currentUserId).snapshots(),
                           builder: (context, reservaSnapshot) {
@@ -258,7 +422,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.drive_eta, color: accentColor, size: 40),
+                                  const Icon(Icons.directions_car, color: primaryColor, size: 40),
                                   const SizedBox(width: 16),
                                   Expanded(
                                     child: Column(
@@ -268,11 +432,12 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                           'Origen: ${origen ?? 'No especificado'}',
                                           style: const TextStyle(fontWeight: FontWeight.bold),
                                         ),
-                                        Text('Destino: ${destino ?? 'No especificado'}', style: const TextStyle(fontSize: 14)),
+                                        Text('Destino: ${destino ?? 'No especificado'}', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                                        const Divider(height: 10),
                                         Text('Vehículo: $vehicleColor, $vehicleModel', style: const TextStyle(fontSize: 14)),
                                         Text('Placa: $vehiclePlate', style: const TextStyle(fontSize: 14)),
-                                        Text('Hora de salida: $formattedTime', style: const TextStyle(fontSize: 14)),
-                                        Text('Asientos disponibles: ${asientosDisponibles ?? 0}', style: const TextStyle(fontSize: 14)),
+                                        Text('Hora de salida: $formattedTime', style: const TextStyle(fontSize: 14, color: accentColor)),
+                                        Text('Asientos disponibles: $asientosDisponibles', style: const TextStyle(fontSize: 14)),
                                       ],
                                     ),
                                   ),
@@ -284,23 +449,28 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                             ElevatedButton(
                                               onPressed: null,
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.grey,
+                                                backgroundColor: Colors.grey.shade400,
+                                                foregroundColor: Colors.white,
                                               ),
-                                              child: const Text('Ruta Solicitada'),
+                                              child: const Text('Reservado'),
                                             ),
-                                            const SizedBox(height: 4),
+                                            const SizedBox(height: 8),
                                             OutlinedButton(
                                               onPressed: () {
                                                 if (reservaId != null) {
                                                   _showCancellationConfirmationDialog(rutaId, reservaId);
                                                 }
                                               },
+                                              style: OutlinedButton.styleFrom(
+                                                side: const BorderSide(color: Colors.red),
+                                                foregroundColor: Colors.red,
+                                              ),
                                               child: const Text('Cancelar'),
                                             ),
                                           ],
                                         )
                                       : ElevatedButton(
-                                          onPressed: (asientosDisponibles == 0) ? null : () async {
+                                          onPressed: (asientosDisponibles == 0) ? null : () {
                                             if (currentUserId == null || idConductor == null) {
                                               if (!mounted) return;
                                               ScaffoldMessenger.of(context).showSnackBar(
@@ -309,47 +479,13 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                               return;
                                             }
                                             
-                                            try {
-                                              final userDoc = await _firestore.collection('usuarios').doc(currentUserId).get();
-                                              final userData = userDoc.data();
-                                              final nombrePasajero = userData?['nombre'] ?? 'Pasajero Anónimo';
-
-                                              await _firestore.runTransaction((transaction) async {
-                                                final rutaRef = _firestore.collection('rutas').doc(rutaId);
-                                                final rutaDoc = await transaction.get(rutaRef);
-                                                final currentSeats = rutaDoc.data()?['asientos_disponibles'] as int? ?? 0;
-                                                
-                                                if (currentSeats > 0) {
-                                                  transaction.update(rutaRef, {
-                                                    'asientos_disponibles': currentSeats - 1,
-                                                  });
-                                                  
-                                                  transaction.set(_firestore.collection('rutas').doc(rutaId).collection('reservas').doc(), {
-                                                    'pasajero_id': currentUserId,
-                                                    'pasajero_nombre': nombrePasajero,
-                                                    'hora_reserva': FieldValue.serverTimestamp(),
-                                                  });
-                                                } else {
-                                                  throw 'No hay asientos disponibles.';
-                                                }
-                                              });
-
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('✅ Solicitud de viaje enviada.')),
-                                              );
-                                            } on FirebaseException catch (e) {
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Error al solicitar la ruta: ${e.message}')),
-                                              );
-                                            } catch (e) {
-                                              if (!mounted) return;
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Ocurrió un error inesperado: $e')),
-                                              );
-                                            }
+                                            // Llama al diálogo que pide la dirección de recogida
+                                            _showPickupInputDialog(rutaId, idConductor, asientosDisponibles);
                                           },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: primaryColor,
+                                            foregroundColor: Colors.white,
+                                          ),
                                           child: const Text('Solicitar'),
                                         ),
                                 ],

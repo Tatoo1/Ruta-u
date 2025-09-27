@@ -1,1 +1,57 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"rutau-practica-iv","appId":"1:240515861982:android:19529bfa0b4d6bea80e14f","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"rutau-practica-iv","appId":"1:240515861982:ios:34aa02544b5dfc6a80e14f","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"macos":{"default":{"projectId":"rutau-practica-iv","appId":"1:240515861982:ios:34aa02544b5dfc6a80e14f","uploadDebugSymbols":false,"fileOutput":"macos/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"rutau-practica-iv","configurations":{"android":"1:240515861982:android:19529bfa0b4d6bea80e14f","ios":"1:240515861982:ios:34aa02544b5dfc6a80e14f","macos":"1:240515861982:ios:34aa02544b5dfc6a80e14f","web":"1:240515861982:web:dc7391740d839ad580e14f","windows":"1:240515861982:web:9f21a10abdb9355680e14f"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "rutau-practica-iv",
+          "appId": "1:240515861982:android:19529bfa0b4d6bea80e14f",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "rutau-practica-iv",
+          "appId": "1:240515861982:ios:34aa02544b5dfc6a80e14f",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "macos": {
+        "default": {
+          "projectId": "rutau-practica-iv",
+          "appId": "1:240515861982:ios:34aa02544b5dfc6a80e14f",
+          "uploadDebugSymbols": false,
+          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "rutau-practica-iv",
+          "configurations": {
+            "android": "1:240515861982:android:19529bfa0b4d6bea80e14f",
+            "ios": "1:240515861982:ios:34aa02544b5dfc6a80e14f",
+            "macos": "1:240515861982:ios:34aa02544b5dfc6a80e14f",
+            "web": "1:240515861982:web:dc7391740d839ad580e14f",
+            "windows": "1:240515861982:web:9f21a10abdb9355680e14f"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
+    }
+  ]
+}
