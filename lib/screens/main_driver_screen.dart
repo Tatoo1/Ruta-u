@@ -429,7 +429,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               Tab(icon: Icon(Icons.add_road, color: Colors.white), text: 'Publicar Ruta'),
               Tab(icon: Icon(Icons.list_alt, color: Colors.white), text: 'Mis Rutas'),
             ],
-            indicatorColor: accentColor,
+            indicatorColor: Color.fromARGB(255, 186, 3, 218),
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
           ),

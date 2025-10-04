@@ -30,12 +30,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
-    List<String> userRoles = ['conductor', 'pasajero']; // Asigna ambos roles por defecto
+    
+    // MANTENIENDO LA FUNCIONALIDAD DE ASIGNAR AMBOS ROLES
+    List<String> userRoles = ['conductor', 'pasajero']; 
 
-    // Valida que el rol se haya seleccionado
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+    // Valida que el rol se haya seleccionado (aunque se asignen ambos) y el resto de campos.
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty || _selectedRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, completa todos los campos')),
+        const SnackBar(content: Text('Por favor, completa todos los campos y selecciona tu rol inicial')),
       );
       return;
     }
@@ -50,29 +52,63 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       setState(() => _isLoading = true);
 
-      // Crear usuario en Firebase Auth
+      // 1. Crear usuario en Firebase Auth
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
+      // 2. ENVIAR CORREO DE VERIFICACIÓN ✉️
+      // Este es el paso clave para que Firebase envíe el correo.
+      // La llamada se hace en el objeto 'User' recién creado.
+      await userCredential.user!.sendEmailVerification();
+      
+      // Muestra un mensaje al usuario
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('¡Registro exitoso! Se ha enviado un correo de verificación. Por favor, revisa tu bandeja de entrada, en caso de no verlo alli revisa tu carpeta de spam.'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+
+      // 3. Guardar datos en Firestore (mantiene la asignación de ambos roles)
       await _firestore.collection('usuarios').doc(userCredential.user!.uid).set({
         'nombre': name,
         'email': email,
-        'rol': userRoles,
+        'rol': userRoles, // Mantiene ambos roles
+        'emailVerificado': false, // Añadir este campo es buena práctica
         'creado': FieldValue.serverTimestamp(),
       });
+      
+      // 4. Cierra la sesión (RECOMENDADO) y redirige
+      // Obliga al usuario a iniciar sesión después de verificar el correo.
+      await _auth.signOut();
 
-      // Navegar a la pantalla principal según la elección del usuario o el rol por defecto
+      // Redirige al inicio de sesión (asumiendo que tienes una pantalla de login)
+      // Si el objetivo es navegar a una pantalla donde se espera la verificación:
+      Navigator.pushReplacementNamed(context, '/login'); 
+      // NOTA: Tu código original navegaba directamente. Lo he cambiado a '/login' para forzar la verificación.
+      // Si necesitas navegar a las pantallas principales, solo descomenta y usa tu lógica original:
+      /*
       if (userRoles.contains('pasajero')) {
         Navigator.pushReplacementNamed(context, '/main_passenger');
       } else if (userRoles.contains('conductor')) {
         Navigator.pushReplacementNamed(context, '/main_driver');
       }
+      */
+
 
     } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      if (e.code == 'weak-password') {
+        errorMessage = 'La contraseña es demasiado débil.';
+      } else if (e.code == 'email-already-in-use') {
+        errorMessage = 'El correo ya está registrado.';
+      } else {
+        errorMessage = 'Error de autenticación: ${e.message}';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error de autenticación: ${e.message}')),
+        SnackBar(content: Text(errorMessage)),
       );
       print('Error de Autenticación (FirebaseAuthException): ${e.code} - ${e.message}');
     } on FirebaseException catch (e) {
@@ -123,6 +159,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _emailController,
+                  keyboardType: TextInputType.emailAddress, // Mejorar el teclado para correo
                   decoration: const InputDecoration(
                     labelText: 'Correo Institucional',
                     prefixIcon: Icon(Icons.email_outlined, color: primaryColor),
