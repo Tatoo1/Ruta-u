@@ -5,9 +5,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import 'dart:async';
 import 'package:intl/intl.dart';
-import 'package:ruta_u/screens/main_passenger_screen.dart'; // Importamos la pantalla de pasajero
-import 'package:ruta_u/screens/start_route_screen.dart'; // ¡Añadido! Pantalla de ruta activa
-import 'package:ruta_u/main.dart'; 
+import 'package:ruta_u/screens/main_passenger_screen.dart';
+import 'package:ruta_u/screens/start_route_screen.dart';
 
 // Definición de colores para consistencia
 const primaryColor = Color(0xFF6200EE);
@@ -22,25 +21,22 @@ class MainDriverScreen extends StatefulWidget {
 }
 
 class _MainDriverScreenState extends State<MainDriverScreen> {
+  // --- TUS VARIABLES Y FUNCIONES EXISTENTES (LA MAYORÍA SIN CAMBIOS) ---
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   final _originAddressController = TextEditingController();
   final _searchController = TextEditingController();
-  // Controladores para los datos del vehículo
   final _vehicleColorController = TextEditingController();
   final _vehiclePlateController = TextEditingController();
   final _vehicleModelController = TextEditingController();
-
   bool _isLoading = false;
   int? _selectedSeats;
   TimeOfDay? _selectedTime;
-  
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
-  
   LatLng? _selectedOriginCoordinates;
   String? _selectedOriginAddress;
-  final LatLng _destinationCoordinates = const LatLng(4.6046, -74.0655); // Coordenadas de la UC (Bogotá)
+  final LatLng _destinationCoordinates = const LatLng(4.6046, -74.0655);
 
   @override
   void initState() {
@@ -58,7 +54,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     super.dispose();
   }
 
-  void _setInitialMarkers() {
+  // ... (Las funciones _setInitialMarkers, _onMapCreated, _onTapMap, _searchAddress, _selectTime, _publishRoute, _deleteRoute, _showUserProfile, _buildUserProfileScreen y _buildProfileInfoRow se quedan exactamente igual que las tenías)
+ void _setInitialMarkers() {
     _markers.add(
       Marker(
         markerId: const MarkerId('destination'),
@@ -401,11 +398,11 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      // ✅ CAMBIO: AHORA SON 3 PESTAÑAS
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ruta U - Conductor', style: TextStyle(color: Colors.white)),
@@ -424,10 +421,12 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               },
             ),
           ],
+          // ✅ CAMBIO: SE AÑADE LA NUEVA PESTAÑA
           bottom: const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.add_road, color: Colors.white), text: 'Publicar Ruta'),
-              Tab(icon: Icon(Icons.list_alt, color: Colors.white), text: 'Mis Rutas'),
+              Tab(icon: Icon(Icons.list_alt, color: Colors.white), text: 'Rutas Activas'),
+              Tab(icon: Icon(Icons.history, color: Colors.white), text: 'Historial'), // NUEVA PESTAÑA
             ],
             indicatorColor: Color.fromARGB(255, 186, 3, 218),
             labelColor: Colors.white,
@@ -437,7 +436,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
         body: TabBarView(
           children: [
             _buildPublishRouteTab(),
-            _buildDriverRoutesListTab(),
+            _buildDriverActiveRoutesTab(), // ANTES: _buildDriverRoutesListTab
+            _buildHistoryAndRatingsTab(), // NUEVO WIDGET
           ],
         ),
       ),
@@ -445,6 +445,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   }
 
   Widget _buildPublishRouteTab() {
+    // ... (Este widget no tiene cambios)
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
       child: Column(
@@ -619,24 +620,205 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     );
   }
 
-  Widget _buildDriverRoutesListTab() {
+  // ✅ CAMBIO: AHORA ESTA PESTAÑA SOLO MUESTRA RUTAS ACTIVAS O EN CURSO
+  Widget _buildDriverActiveRoutesTab() {
     final user = _auth.currentUser;
     if (user == null) {
       return const Center(child: Text('Inicia sesión para ver tus rutas.', style: TextStyle(color: Colors.grey)));
     }
 
+    return StreamBuilder<QuerySnapshot>(
+      // La consulta ahora filtra por estados que no son 'finalizada'
+      stream: _firestore
+          .collection('rutas')
+          .where('id_conductor', isEqualTo: user.uid)
+          .where('estado', whereIn: ['activa', 'en_curso']).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(
+            child: Text(
+              'No tienes rutas activas en este momento.',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          );
+        }
+        final rutas = snapshot.data!.docs;
+        
+        return ListView.builder(
+          padding: const EdgeInsets.all(16.0),
+          itemCount: rutas.length,
+          itemBuilder: (context, index) {
+            final ruta = rutas[index];
+            final data = ruta.data() as Map<String, dynamic>;
+            final rutaId = ruta.id;
+            final estado = data['estado'] ?? 'activa';
+            
+            final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
+            final destino = data['destino'] is String ? data['destino'] as String? : null;
+            final horaSalida = (data['hora_salida'] as Timestamp?)?.toDate();
+            final formattedTime = horaSalida != null ? DateFormat.jm().format(horaSalida) : 'Hora no definida';
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8.0),
+              elevation: 4,
+              child: Column(
+                children: [
+                  ExpansionTile(
+                    title: Text(
+                      'Ruta: ${origen ?? 'No especificado'}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text('Estado: $estado\nHora: $formattedTime'),
+                    children: [
+                      _buildReservationsList(rutaId),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => StartRouteScreen(rutaId: rutaId),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.navigation, color: Colors.white),
+                            label: Text(estado == 'en_curso' ? 'Ver Ruta Activa' : 'Iniciar Ruta', style: const TextStyle(color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accentColor,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteRoute(rutaId),
+                            tooltip: 'Eliminar Ruta',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ✅ NUEVO WIDGET: PESTAÑA DE HISTORIAL Y CALIFICACIONES
+  Widget _buildHistoryAndRatingsTab() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return const Center(child: Text('Inicia sesión para ver tu historial.', style: TextStyle(color: Colors.grey)));
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // SECCIÓN DE RESUMEN DE CALIFICACIONES
           const Text(
-            'Tus Rutas Publicadas y Reservas',
+            'Tu Calificación General',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor),
-            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('rutas').where('id_conductor', isEqualTo: user.uid).snapshots(),
+            stream: _firestore.collection('calificaciones').where('conductor_id', isEqualTo: user.uid).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Card(
+                  child: ListTile(
+                    leading: Icon(Icons.star_border, color: Colors.grey),
+                    title: Text('Aún no has recibido calificaciones.'),
+                  ),
+                );
+              }
+              
+              final ratings = snapshot.data!.docs;
+              double totalRating = 0;
+              for (var doc in ratings) {
+                totalRating += (doc.data() as Map<String, dynamic>)['calificacion'] ?? 0;
+              }
+              final averageRating = totalRating / ratings.length;
+
+              return Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            averageRating.toStringAsFixed(1),
+                            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: primaryColor),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildStarRatingDisplay(averageRating),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Basado en ${ratings.length} calificación(es)',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      const Divider(height: 24),
+                      const Text(
+                        'Comentarios Recientes:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      // Muestra los últimos 3 comentarios
+                      ...ratings.take(3).map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final comment = data['comentario'] as String?;
+                          if (comment == null || comment.isEmpty) return const SizedBox.shrink();
+                          return ListTile(
+                            leading: const Icon(Icons.comment, color: accentColor),
+                            title: Text('"$comment"'),
+                          );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          // SECCIÓN DE RUTAS FINALIZADAS
+          const Text(
+            'Rutas Pasadas',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor),
+          ),
+          const SizedBox(height: 8),
+          StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('rutas')
+                .where('id_conductor', isEqualTo: user.uid)
+                .where('estado', isEqualTo: 'finalizada')
+                .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -644,93 +826,27 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                 return const Center(
                   child: Text(
-                    'No has publicado ninguna ruta aún.',
+                    'No tienes rutas completadas.',
                     style: TextStyle(fontSize: 16, color: Colors.grey),
                   ),
                 );
               }
               final rutas = snapshot.data!.docs;
-              final now = DateTime.now();
-              
               return ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: rutas.length,
                 itemBuilder: (context, index) {
-                  final ruta = rutas[index];
-                  final data = ruta.data() as Map<String, dynamic>;
-                  final rutaId = ruta.id;
-                  
-                  final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
-                  final destino = data['destino'] is String ? data['destino'] as String? : null;
+                  final data = rutas[index].data() as Map<String, dynamic>;
+                   final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
                   final horaSalida = (data['hora_salida'] as Timestamp?)?.toDate();
-                  final formattedTime = horaSalida != null ? DateFormat.jm().format(horaSalida) : 'Hora no definida';
-
-                  // Lógica para habilitar el botón:
-                  // Permitir iniciar la ruta si faltan 30 minutos o menos para la hora de salida
-                  // y la ruta no ha pasado hace más de 1 hora (para rutas olvidadas)
-                  final bool canStartRoute = horaSalida != null && 
-                      horaSalida.difference(now).inMinutes <= 30 && 
-                      horaSalida.isAfter(now.subtract(const Duration(hours: 1)));
-                  final String buttonText = canStartRoute ? 'Iniciar Ruta' : 'Ruta Pendiente';
+                  final formattedDate = horaSalida != null ? DateFormat.yMMMd().format(horaSalida) : 'Fecha no definida';
 
                   return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 8.0),
-                    elevation: 4,
-                    child: Column(
-                      children: [
-                        ExpansionTile(
-                          title: Text(
-                            'Ruta: ${origen ?? 'No especificado'}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text('Destino: ${destino ?? 'No especificado'}\nHora: $formattedTime'),
-                          children: [
-                            _buildReservationsList(rutaId),
-                          ],
-                        ),
-                        // Fila de acciones (Iniciar Ruta y Eliminar)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Botón "Iniciar Ruta"
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: canStartRoute ? () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) => StartRouteScreen(rutaId: rutaId),
-                                      ),
-                                    );
-                                  } : null, // Deshabilitar si no es el momento
-                                  icon: const Icon(Icons.navigation, color: Colors.white),
-                                  label: Text(buttonText, style: const TextStyle(color: Colors.white)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: canStartRoute ? accentColor : Colors.grey,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              // Botón "Eliminar"
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _deleteRoute(rutaId),
-                                  tooltip: 'Eliminar Ruta',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    child: ListTile(
+                      leading: const Icon(Icons.check_circle, color: Colors.green),
+                      title: Text('Ruta desde: ${origen ?? 'No especificado'}'),
+                      subtitle: Text('Fecha: $formattedDate'),
                     ),
                   );
                 },
@@ -741,8 +857,22 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       ),
     );
   }
+  
+  // ✅ NUEVO WIDGET AUXILIAR: PARA MOSTRAR ESTRELLAS DE CALIFICACIÓN
+  Widget _buildStarRatingDisplay(double rating) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (index) {
+        if (index < rating) {
+          return const Icon(Icons.star, color: Colors.amber);
+        }
+        return const Icon(Icons.star_border, color: Colors.amber);
+      }),
+    );
+  }
 
   Widget _buildReservationsList(String rutaId) {
+    // ... (Este widget no tiene cambios)
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('rutas').doc(rutaId).collection('reservas').snapshots(),
       builder: (context, snapshot) {

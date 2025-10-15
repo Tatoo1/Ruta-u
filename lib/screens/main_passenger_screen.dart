@@ -3,8 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:ruta_u/screens/main_driver_screen.dart';
-// Importamos la pantalla del conductor (asegúrate de que esté disponible)
-import 'package:ruta_u/screens/start_route_screen.dart'; 
+import 'package:ruta_u/screens/passenger_route_tracking_screen.dart';
+import 'package:ruta_u/screens/rating_screen.dart'; // ✅ IMPORTACIÓN AÑADIDA PARA LA PANTALLA DE CALIFICACIÓN
 
 // Definición de colores para consistencia
 const primaryColor = Color(0xFF6200EE);
@@ -22,8 +22,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
 
-  // --- LÓGICA DE PERFIL ---
-
+  // --- LÓGICA DE PERFIL (Sin cambios) ---
   void _showUserProfile() {
     final user = _auth.currentUser;
     if (user != null) {
@@ -36,6 +35,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
   }
 
   Widget _buildUserProfileScreen(String userId) {
+    // ... (Este widget no necesita cambios)
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi Perfil', style: TextStyle(color: Colors.white)),
@@ -90,7 +90,6 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                   Center(
                     child: ElevatedButton(
                       onPressed: () {
-                        // Navega a la pantalla principal del conductor usando el nombre de la ruta
                         Navigator.of(context).pushReplacement(
                             MaterialPageRoute(builder: (context) => const MainDriverScreen()),
                         );
@@ -116,7 +115,8 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
   }
 
   Widget _buildProfileInfoRow(IconData icon, String label, String value) {
-    return Padding(
+    // ... (Este widget no necesita cambios)
+        return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
@@ -137,10 +137,10 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
     );
   }
 
-  // --- LÓGICA DE RESERVA Y CANCELACIÓN ---
-
+  // --- LÓGICA DE RESERVA Y CANCELACIÓN (Sin cambios) ---
   Future<void> _requestRoute(String rutaId, String idConductor, String puntoRecogida) async {
-    final user = _auth.currentUser;
+    // ... (Esta función no necesita cambios)
+        final user = _auth.currentUser;
     final currentUserId = user?.uid;
 
     if (currentUserId == null || idConductor == null) {
@@ -151,7 +151,6 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
       return;
     }
     
-    // Validación para que el conductor no reserve su propia ruta
     if (currentUserId == idConductor) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -175,13 +174,12 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
             'asientos_disponibles': currentSeats - 1,
           });
           
-          // AÑADIENDO EL PUNTO DE RECOGIDA AQUÍ
           transaction.set(_firestore.collection('rutas').doc(rutaId).collection('reservas').doc(), {
             'pasajero_id': currentUserId,
             'pasajero_nombre': nombrePasajero,
-            'punto_recogida': puntoRecogida, // <--- NUEVO CAMPO
+            'punto_recogida': puntoRecogida,
             'hora_reserva': FieldValue.serverTimestamp(),
-            'recogido': false, // Inicializamos el estado para el conductor
+            'estado_recogido': false,
           });
         } else {
           throw 'No hay asientos disponibles.';
@@ -189,7 +187,6 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
       });
 
       if (!mounted) return;
-      // *** CORRECCIÓN APLICADA: Se eliminó la palabra clave 'const' de SnackBar ***
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('✅ Solicitud de viaje enviada. Punto de recogida: $puntoRecogida')),
       );
@@ -206,14 +203,13 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
     }
   }
   
-  // Dialogo modal para solicitar la dirección de recogida al pasajero
-  // Se ha modificado el tipo del parámetro asientosDisponibles para aceptar int? (aunque luego lo manejaremos como int)
   Future<void> _showPickupInputDialog(String rutaId, String idConductor, int asientosDisponibles) async {
-    final TextEditingController pickupController = TextEditingController();
+    // ... (Esta función no necesita cambios)
+        final TextEditingController pickupController = TextEditingController();
     
     return showDialog<void>(
       context: context,
-      barrierDismissible: true, // Permitir cerrar tocando fuera
+      barrierDismissible: true, 
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Confirmar Reserva'),
@@ -252,7 +248,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
               onPressed: () {
                 final puntoRecogida = pickupController.text.trim();
                 if (puntoRecogida.isNotEmpty && asientosDisponibles > 0) {
-                  Navigator.of(context).pop(); // Cerrar el diálogo
+                  Navigator.of(context).pop(); 
                   _requestRoute(rutaId, idConductor, puntoRecogida);
                 } else if (puntoRecogida.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -268,7 +264,8 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
   }
 
   Future<void> _cancelReservation(String rutaId, String reservaId) async {
-    try {
+    // ... (Esta función no necesita cambios)
+        try {
       await _firestore.runTransaction((transaction) async {
         final rutaRef = _firestore.collection('rutas').doc(rutaId);
         final rutaDoc = await transaction.get(rutaRef);
@@ -299,7 +296,8 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
   }
 
   Future<void> _showCancellationConfirmationDialog(String rutaId, String reservaId) async {
-    return showDialog<void>(
+    // ... (Esta función no necesita cambios)
+        return showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
@@ -383,7 +381,8 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                   }
 
                   final rutas = snapshot.data!.docs;
-
+                  
+                  // ✅ INICIO DE LA SECCIÓN MODIFICADA
                   return ListView.builder(
                     itemCount: rutas.length,
                     itemBuilder: (context, index) {
@@ -392,10 +391,11 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                       final rutaId = ruta.id;
                       final idConductor = data['id_conductor'] as String?;
                       
+                      final estadoRuta = data['estado'] as String? ?? 'pendiente';
+
                       final origen = (data['origen'] is Map) ? data['origen']['direccion'] as String? : (data['origen'] as String?);
                       final destino = (data['destino'] is Map) ? data['destino']['direccion'] as String? : (data['destino'] as String?);
                       
-                      // Aseguramos que asientosDisponibles sea un int no nulo (usando 0 como fallback)
                       final asientosDisponibles = (data['asientos_disponibles'] is int ? data['asientos_disponibles'] as int? : null) ?? 0;
                       
                       final horaSalida = (data['hora_salida'] as Timestamp?)?.toDate();
@@ -442,31 +442,79 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
+                                  // ✅ LÓGICA DE BOTONES MEJORADA
                                   hasReserved
                                       ? Column(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            ElevatedButton(
-                                              onPressed: null,
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.grey.shade400,
-                                                foregroundColor: Colors.white,
-                                              ),
-                                              child: const Text('Reservado'),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            OutlinedButton(
-                                              onPressed: () {
-                                                if (reservaId != null) {
-                                                  _showCancellationConfirmationDialog(rutaId, reservaId);
-                                                }
-                                              },
-                                              style: OutlinedButton.styleFrom(
-                                                side: const BorderSide(color: Colors.red),
-                                                foregroundColor: Colors.red,
-                                              ),
-                                              child: const Text('Cancelar'),
-                                            ),
+                                            // CASO 1: La ruta está finalizada
+                                            if (estadoRuta == 'finalizada')
+                                              ...[ // Usamos '...' para añadir varios widgets a la lista
+                                                ElevatedButton(
+                                                  onPressed: null, // Botón desactivado
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.grey.shade400,
+                                                  ),
+                                                  child: const Text('Ruta Completada', style: TextStyle(color: Colors.white)),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                OutlinedButton(
+                                                  onPressed: () {
+                                                     if (idConductor != null) {
+                                                      Navigator.of(context).push(MaterialPageRoute(
+                                                        builder: (context) => RatingScreen(
+                                                          rutaId: rutaId,
+                                                          conductorId: idConductor,
+                                                        ),
+                                                      ));
+                                                    }
+                                                  },
+                                                  style: OutlinedButton.styleFrom(
+                                                    side: const BorderSide(color: primaryColor),
+                                                    foregroundColor: primaryColor,
+                                                  ),
+                                                  child: const Text('Calificar'),
+                                                ),
+                                              ]
+                                            // CASO 2: La ruta está en curso
+                                            else if (estadoRuta == 'en_curso')
+                                              ElevatedButton(
+                                                onPressed: () {
+                                                  Navigator.of(context).push(MaterialPageRoute(
+                                                    builder: (context) => PassengerRouteTrackingScreen(rutaId: rutaId),
+                                                  ));
+                                                },
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: accentColor,
+                                                  foregroundColor: Colors.black,
+                                                ),
+                                                child: const Text('Ver Ruta en Vivo'),
+                                              )
+                                            // CASO 3: La ruta está pendiente
+                                            else 
+                                              ...[
+                                                ElevatedButton(
+                                                  onPressed: null,
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.grey.shade400,
+                                                    foregroundColor: Colors.white,
+                                                  ),
+                                                  child: const Text('Reservado'),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                OutlinedButton(
+                                                  onPressed: () {
+                                                    if (reservaId != null) {
+                                                      _showCancellationConfirmationDialog(rutaId, reservaId);
+                                                    }
+                                                  },
+                                                  style: OutlinedButton.styleFrom(
+                                                    side: const BorderSide(color: Colors.red),
+                                                    foregroundColor: Colors.red,
+                                                  ),
+                                                  child: const Text('Cancelar'),
+                                                ),
+                                              ],
                                           ],
                                         )
                                       : ElevatedButton(
@@ -478,8 +526,6 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                               );
                                               return;
                                             }
-                                            
-                                            // Llama al diálogo que pide la dirección de recogida
                                             _showPickupInputDialog(rutaId, idConductor, asientosDisponibles);
                                           },
                                           style: ElevatedButton.styleFrom(
@@ -496,6 +542,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                       );
                     },
                   );
+                  // ✅ FIN DE LA SECCIÓN MODIFICADA
                 },
               ),
             ),
