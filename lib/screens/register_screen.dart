@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:ruta_u/main.dart';
-import 'package:ruta_u/screens/main_driver_screen.dart';
-import 'package:ruta_u/screens/main_passenger_screen.dart';
-
+import 'package:flutter/gestures.dart'; // ✅ IMPORTACIÓN AÑADIDA para enlaces en texto
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -24,20 +21,59 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
   String? _selectedRole;
+  bool _termsAccepted = false; // ✅ NUEVA VARIABLE DE ESTADO
+
+  // ✅ NUEVA FUNCIÓN: Muestra el diálogo con los términos y condiciones.
+  void _showTermsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Términos y Política de Datos'),
+        content: const SingleChildScrollView(
+          child: Text(
+              'AVISO IMPORTANTE: Este es un texto genérico de ejemplo. NO constituye asesoría legal. Debes consultar con un abogado para redactar una política que se ajuste a tu aplicación y cumpla con toda la legislación colombiana vigente.\n\n'
+              '--- TÉRMINOS Y CONDICIONES DE USO DE RUTA U ---\n\n'
+              'Al registrarse, usted acepta y se compromete a cumplir los siguientes Términos y Condiciones...\n\n'
+              '--- POLÍTICA DE TRATAMIENTO DE DATOS PERSONALES (HABEAS DATA) ---\n\n'
+              'De conformidad con la Ley 1581 de 2012, al marcar la casilla de aceptación, usted autoriza de manera libre, previa, expresa e informada a Ruta U para realizar el tratamiento de sus datos personales...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _registerUser() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
-    
-    // MANTENIENDO LA FUNCIONALIDAD DE ASIGNAR AMBOS ROLES
-    List<String> userRoles = ['conductor', 'pasajero']; 
 
-    // Valida que el rol se haya seleccionado (aunque se asignen ambos) y el resto de campos.
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty || _selectedRole == null) {
+    List<String> userRoles = ['conductor', 'pasajero'];
+
+    // ✅ NUEVA VALIDACIÓN: Verifica si los términos fueron aceptados.
+    if (!_termsAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, completa todos los campos y selecciona tu rol inicial')),
+        const SnackBar(
+            content:
+                Text('Debes aceptar los términos y condiciones para continuar.')),
+      );
+      return;
+    }
+
+    if (name.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        confirmPassword.isEmpty ||
+        _selectedRole == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Por favor, completa todos los campos y selecciona tu rol inicial')),
       );
       return;
     }
@@ -48,56 +84,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-    
+
     try {
       setState(() => _isLoading = true);
 
-      // 1. Crear usuario en Firebase Auth
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // 2. ENVIAR CORREO DE VERIFICACIÓN ✉️
-      // Este es el paso clave para que Firebase envíe el correo.
-      // La llamada se hace en el objeto 'User' recién creado.
       await userCredential.user!.sendEmailVerification();
-      
-      // Muestra un mensaje al usuario
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('¡Registro exitoso! Se ha enviado un correo de verificación. Por favor, revisa tu bandeja de entrada, en caso de no verlo alli revisa tu carpeta de spam.'),
+          content: Text(
+              '¡Registro exitoso! Se ha enviado un correo de verificación.'),
           duration: Duration(seconds: 5),
         ),
       );
 
-      // 3. Guardar datos en Firestore (mantiene la asignación de ambos roles)
+      // ✅ CAMBIO: Se añaden los campos de aceptación de términos al guardar el usuario.
       await _firestore.collection('usuarios').doc(userCredential.user!.uid).set({
         'nombre': name,
         'email': email,
-        'rol': userRoles, // Mantiene ambos roles
-        'emailVerificado': false, // Añadir este campo es buena práctica
+        'rol': userRoles,
+        'emailVerificado': false,
         'creado': FieldValue.serverTimestamp(),
+        'terminos_aceptados': true,
+        'fecha_aceptacion': FieldValue.serverTimestamp(),
       });
-      
-      // 4. Cierra la sesión (RECOMENDADO) y redirige
-      // Obliga al usuario a iniciar sesión después de verificar el correo.
+
       await _auth.signOut();
-
-      // Redirige al inicio de sesión (asumiendo que tienes una pantalla de login)
-      // Si el objetivo es navegar a una pantalla donde se espera la verificación:
-      Navigator.pushReplacementNamed(context, '/login'); 
-      // NOTA: Tu código original navegaba directamente. Lo he cambiado a '/login' para forzar la verificación.
-      // Si necesitas navegar a las pantallas principales, solo descomenta y usa tu lógica original:
-      /*
-      if (userRoles.contains('pasajero')) {
-        Navigator.pushReplacementNamed(context, '/main_passenger');
-      } else if (userRoles.contains('conductor')) {
-        Navigator.pushReplacementNamed(context, '/main_driver');
-      }
-      */
-
-
+      Navigator.pushReplacementNamed(context, '/login');
+      
     } on FirebaseAuthException catch (e) {
       String errorMessage;
       if (e.code == 'weak-password') {
@@ -110,27 +129,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMessage)),
       );
-      print('Error de Autenticación (FirebaseAuthException): ${e.code} - ${e.message}');
-    } on FirebaseException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error de Firestore: ${e.message}')),
-      );
-      print('Error de Firestore (FirebaseException): ${e.code} - ${e.message}');
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error inesperado: ${e.toString()}')),
       );
-      print('Error Inesperado (catch all): ${e.toString()}');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Definición de colores para consistencia
     const primaryColor = Color(0xFF6200EE);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Registro'),
@@ -145,7 +158,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: <Widget>[
                 const Text(
                   'Crea una cuenta en Ruta U',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: primaryColor),
+                  style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: primaryColor),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -159,10 +175,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _emailController,
-                  keyboardType: TextInputType.emailAddress, // Mejorar el teclado para correo
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
                     labelText: 'Correo Institucional',
-                    prefixIcon: Icon(Icons.email_outlined, color: primaryColor),
+                    prefixIcon:
+                        Icon(Icons.email_outlined, color: primaryColor),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -191,6 +208,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
                 Row(
+                  // ... (Tu widget de selección de rol no tiene cambios)
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Expanded(
@@ -241,6 +259,44 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 24),
+                
+                // ✅ NUEVO WIDGET: CHECKBOX PARA TÉRMINOS Y CONDICIONES
+                CheckboxListTile(
+                  value: _termsAccepted,
+                  onChanged: (newValue) {
+                    setState(() {
+                      _termsAccepted = newValue ?? false;
+                    });
+                  },
+                  title: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(color: Colors.black54, fontSize: 12),
+                      children: [
+                        const TextSpan(text: 'He leído y acepto los '),
+                        TextSpan(
+                          text: 'Términos y Condiciones',
+                          style: const TextStyle(
+                              color: primaryColor,
+                              decoration: TextDecoration.underline),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = _showTermsDialog,
+                        ),
+                        const TextSpan(text: ' y la '),
+                        TextSpan(
+                          text: 'Política de Datos (Habeas Data).',
+                          style: const TextStyle(
+                              color: primaryColor,
+                              decoration: TextDecoration.underline),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = _showTermsDialog,
+                        ),
+                      ],
+                    ),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
