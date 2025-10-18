@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:ruta_u/screens/main_driver_screen.dart';
 import 'package:ruta_u/screens/passenger_route_tracking_screen.dart';
-import 'package:ruta_u/screens/rating_screen.dart'; // ✅ IMPORTACIÓN AÑADIDA PARA LA PANTALLA DE CALIFICACIÓN
+import 'package:ruta_u/screens/rating_screen.dart';
 
 // Definición de colores para consistencia
 const primaryColor = Color(0xFF6200EE);
@@ -137,10 +137,11 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
     );
   }
 
-  // --- LÓGICA DE RESERVA Y CANCELACIÓN (Sin cambios) ---
-  Future<void> _requestRoute(String rutaId, String idConductor, String puntoRecogida) async {
-    // ... (Esta función no necesita cambios)
-        final user = _auth.currentUser;
+  // --- LÓGICA DE RESERVA Y CANCELACIÓN ---
+
+  // ✅ CAMBIO: LA FUNCIÓN AHORA ACEPTA EL MÉTODO DE PAGO
+  Future<void> _requestRoute(String rutaId, String idConductor, String puntoRecogida, String metodoPago) async {
+    final user = _auth.currentUser;
     final currentUserId = user?.uid;
 
     if (currentUserId == null || idConductor == null) {
@@ -180,6 +181,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
             'punto_recogida': puntoRecogida,
             'hora_reserva': FieldValue.serverTimestamp(),
             'estado_recogido': false,
+            'metodo_pago': metodoPago, // ✅ CAMBIO: SE GUARDA EL MÉTODO DE PAGO
           });
         } else {
           throw 'No hay asientos disponibles.';
@@ -188,7 +190,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✅ Solicitud de viaje enviada. Punto de recogida: $puntoRecogida')),
+        SnackBar(content: Text('✅ Solicitud de viaje enviada. Método de pago: $metodoPago')),
       );
     } on FirebaseException catch (e) {
       if (!mounted) return;
@@ -203,61 +205,92 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
     }
   }
   
+  // ✅ CAMBIO: EL DIÁLOGO AHORA INCLUYE LA SELECCIÓN DE PAGO
   Future<void> _showPickupInputDialog(String rutaId, String idConductor, int asientosDisponibles) async {
-    // ... (Esta función no necesita cambios)
-        final TextEditingController pickupController = TextEditingController();
+    final TextEditingController pickupController = TextEditingController();
+    String? selectedPaymentMethod; // Variable para guardar la selección
     
     return showDialog<void>(
       context: context,
       barrierDismissible: true, 
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirmar Reserva'),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                const Text('Por favor, especifica tu punto exacto de recogida.'),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: pickupController,
-                  decoration: InputDecoration(
-                    labelText: 'Dirección de Recogida',
-                    hintText: 'Ej: Carrera 7 # 45-10 (Edificio A)',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8.0),
+        // Usamos StatefulBuilder para manejar el estado dentro del diálogo
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Confirmar Reserva'),
+              content: SingleChildScrollView(
+                child: ListBody(
+                  children: <Widget>[
+                    const Text('1. Especifica tu punto de recogida:'),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: pickupController,
+                      decoration: InputDecoration(
+                        labelText: 'Dirección de Recogida',
+                        hintText: 'Ej: Carrera 7 # 45-10',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8.0),
+                        ),
+                        prefixIcon: const Icon(Icons.location_on, color: primaryColor),
+                      ),
+                      onChanged: (value) {
+                        // Re-renderiza el diálogo para actualizar el estado del botón
+                        setState(() {});
+                      },
                     ),
-                    prefixIcon: const Icon(Icons.location_on, color: primaryColor),
+                    const SizedBox(height: 24),
+                    const Text('2. Selecciona tu método de pago:'),
+                    const SizedBox(height: 8),
+                    RadioListTile<String>(
+                      title: const Text('Efectivo'),
+                      secondary: const Icon(Icons.money),
+                      value: 'Efectivo',
+                      groupValue: selectedPaymentMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          selectedPaymentMethod = value;
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Nequi / Daviplata'),
+                      secondary: const Icon(Icons.phone_android),
+                      value: 'Nequi/Daviplata',
+                      groupValue: selectedPaymentMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          selectedPaymentMethod = value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
                   ),
+                  // El botón se habilita solo si se ha ingresado un punto y seleccionado un pago
+                  onPressed: (pickupController.text.trim().isNotEmpty && selectedPaymentMethod != null)
+                      ? () {
+                          Navigator.of(context).pop(); 
+                          _requestRoute(rutaId, idConductor, pickupController.text.trim(), selectedPaymentMethod!);
+                        }
+                      : null, // Deshabilita el botón si falta información
+                  child: const Text('Reservar'),
                 ),
               ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Reservar'),
-              onPressed: () {
-                final puntoRecogida = pickupController.text.trim();
-                if (puntoRecogida.isNotEmpty && asientosDisponibles > 0) {
-                  Navigator.of(context).pop(); 
-                  _requestRoute(rutaId, idConductor, puntoRecogida);
-                } else if (puntoRecogida.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Debes especificar una dirección de recogida.')),
-                  );
-                }
-              },
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -332,6 +365,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (El resto del build y el ListView.builder se quedan igual)
     final user = _auth.currentUser;
     final String? currentUserId = user?.uid;
 
@@ -382,7 +416,6 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
 
                   final rutas = snapshot.data!.docs;
                   
-                  // ✅ INICIO DE LA SECCIÓN MODIFICADA
                   return ListView.builder(
                     itemCount: rutas.length,
                     itemBuilder: (context, index) {
@@ -442,19 +475,15 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  // ✅ LÓGICA DE BOTONES MEJORADA
                                   hasReserved
                                       ? Column(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            // CASO 1: La ruta está finalizada
                                             if (estadoRuta == 'finalizada')
-                                              ...[ // Usamos '...' para añadir varios widgets a la lista
+                                              ...[
                                                 ElevatedButton(
-                                                  onPressed: null, // Botón desactivado
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: Colors.grey.shade400,
-                                                  ),
+                                                  onPressed: null,
+                                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade400,),
                                                   child: const Text('Ruta Completada', style: TextStyle(color: Colors.white)),
                                                 ),
                                                 const SizedBox(height: 8),
@@ -469,14 +498,10 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                                       ));
                                                     }
                                                   },
-                                                  style: OutlinedButton.styleFrom(
-                                                    side: const BorderSide(color: primaryColor),
-                                                    foregroundColor: primaryColor,
-                                                  ),
+                                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: primaryColor), foregroundColor: primaryColor),
                                                   child: const Text('Calificar'),
                                                 ),
                                               ]
-                                            // CASO 2: La ruta está en curso
                                             else if (estadoRuta == 'en_curso')
                                               ElevatedButton(
                                                 onPressed: () {
@@ -484,21 +509,14 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                                     builder: (context) => PassengerRouteTrackingScreen(rutaId: rutaId),
                                                   ));
                                                 },
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: accentColor,
-                                                  foregroundColor: Colors.black,
-                                                ),
+                                                style: ElevatedButton.styleFrom(backgroundColor: accentColor, foregroundColor: Colors.black),
                                                 child: const Text('Ver Ruta en Vivo'),
                                               )
-                                            // CASO 3: La ruta está pendiente
                                             else 
                                               ...[
                                                 ElevatedButton(
                                                   onPressed: null,
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: Colors.grey.shade400,
-                                                    foregroundColor: Colors.white,
-                                                  ),
+                                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade400, foregroundColor: Colors.white),
                                                   child: const Text('Reservado'),
                                                 ),
                                                 const SizedBox(height: 8),
@@ -508,10 +526,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                                       _showCancellationConfirmationDialog(rutaId, reservaId);
                                                     }
                                                   },
-                                                  style: OutlinedButton.styleFrom(
-                                                    side: const BorderSide(color: Colors.red),
-                                                    foregroundColor: Colors.red,
-                                                  ),
+                                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red), foregroundColor: Colors.red),
                                                   child: const Text('Cancelar'),
                                                 ),
                                               ],
@@ -528,10 +543,7 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                                             }
                                             _showPickupInputDialog(rutaId, idConductor, asientosDisponibles);
                                           },
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: primaryColor,
-                                            foregroundColor: Colors.white,
-                                          ),
+                                          style: ElevatedButton.styleFrom(backgroundColor: primaryColor, foregroundColor: Colors.white),
                                           child: const Text('Solicitar'),
                                         ),
                                 ],
@@ -542,7 +554,6 @@ class _MainPassengerScreenState extends State<MainPassengerScreen> {
                       );
                     },
                   );
-                  // ✅ FIN DE LA SECCIÓN MODIFICADA
                 },
               ),
             ),

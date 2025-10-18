@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/gestures.dart'; // ✅ IMPORTACIÓN AÑADIDA para enlaces en texto
+import 'package:flutter/gestures.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -21,21 +21,50 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
   String? _selectedRole;
-  bool _termsAccepted = false; // ✅ NUEVA VARIABLE DE ESTADO
+  bool _termsAccepted = false;
 
-  // ✅ NUEVA FUNCIÓN: Muestra el diálogo con los términos y condiciones.
+  // ✅ FUNCIÓN MODIFICADA: Ahora muestra un texto más detallado y con formato.
   void _showTermsDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Términos y Política de Datos'),
-        content: const SingleChildScrollView(
-          child: Text(
-              'AVISO IMPORTANTE: Este es un texto genérico de ejemplo. NO constituye asesoría legal. Debes consultar con un abogado para redactar una política que se ajuste a tu aplicación y cumpla con toda la legislación colombiana vigente.\n\n'
-              '--- TÉRMINOS Y CONDICIONES DE USO DE RUTA U ---\n\n'
-              'Al registrarse, usted acepta y se compromete a cumplir los siguientes Términos y Condiciones...\n\n'
-              '--- POLÍTICA DE TRATAMIENTO DE DATOS PERSONALES (HABEAS DATA) ---\n\n'
-              'De conformidad con la Ley 1581 de 2012, al marcar la casilla de aceptación, usted autoriza de manera libre, previa, expresa e informada a Ruta U para realizar el tratamiento de sus datos personales...'),
+        content: SingleChildScrollView(
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(color: Colors.black.withOpacity(0.7), fontSize: 14, height: 1.5),
+              children: const [
+                TextSpan(
+                  text: 'AVISO IMPORTANTE:\n',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(
+                  text: 'Se genera un texto de T&C pero se debe consultar con profesionales legales para ajustarlo conforme a las leyes actuales\n\n',
+                  style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+                ),
+                TextSpan(
+                  text: 'Términos y Condiciones de Uso\n',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                TextSpan(
+                  text: '1. Objeto: Ruta U es una plataforma tecnológica que actúa como intermediaria para conectar a miembros de la comunidad universitaria que deseen compartir un viaje en vehículo particular.\n'
+                        '2. Responsabilidades del Usuario: Usted se compromete a proporcionar información veraz y actualizada, a mantener un comportamiento respetuoso y a cumplir con las normas de seguridad vial.\n'
+                        '3. Limitación de Responsabilidad: Ruta U no provee servicios de transporte y no se hace responsable por incidentes, accidentes, o cualquier disputa que pueda surgir entre los usuarios durante un viaje.\n\n',
+                ),
+                TextSpan(
+                  text: 'Política de Tratamiento de Datos (Habeas Data)\n',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                TextSpan(
+                  text: 'De conformidad con la Ley 1581 de 2012, al aceptar estos términos, usted autoriza a Ruta U para el tratamiento de sus datos personales con las siguientes finalidades:\n\n'
+                        'a) Datos Recopilados: Nombre, correo electrónico, rol (conductor/pasajero), ubicación en tiempo real durante las rutas activas, y datos del vehículo (para conductores).\n'
+                        'b) Finalidad: Conectar usuarios, facilitar la comunicación, mejorar la seguridad, procesar calificaciones y gestionar el servicio.\n'
+                        'c) Derechos del Titular: Usted tiene derecho a conocer, actualizar, rectificar y solicitar la supresión de sus datos personales escribiendo a [Correo de Soporte de la App].\n\n'
+                        'Al marcar la casilla, usted declara que ha leído y acepta de manera libre, previa, expresa e informada los términos y la política de tratamiento de datos de Ruta U.',
+                ),
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
@@ -55,25 +84,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     List<String> userRoles = ['conductor', 'pasajero'];
 
-    // ✅ NUEVA VALIDACIÓN: Verifica si los términos fueron aceptados.
     if (!_termsAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Debes aceptar los términos y condiciones para continuar.')),
+        const SnackBar(content: Text('Debes aceptar los términos y condiciones para continuar.')),
       );
       return;
     }
 
-    if (name.isEmpty ||
-        email.isEmpty ||
-        password.isEmpty ||
-        confirmPassword.isEmpty ||
-        _selectedRole == null) {
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty || _selectedRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text(
-                'Por favor, completa todos los campos y selecciona tu rol inicial')),
+        const SnackBar(content: Text('Por favor, completa todos los campos y selecciona tu rol inicial')),
       );
       return;
     }
@@ -88,22 +108,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       setState(() => _isLoading = true);
 
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
       await userCredential.user!.sendEmailVerification();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              '¡Registro exitoso! Se ha enviado un correo de verificación.'),
-          duration: Duration(seconds: 5),
-        ),
+        const SnackBar(content: Text('¡Registro exitoso! Se ha enviado un correo de verificación.'), duration: Duration(seconds: 5)),
       );
 
-      // ✅ CAMBIO: Se añaden los campos de aceptación de términos al guardar el usuario.
       await _firestore.collection('usuarios').doc(userCredential.user!.uid).set({
         'nombre': name,
         'email': email,
@@ -126,13 +137,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       } else {
         errorMessage = 'Error de autenticación: ${e.message}';
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error inesperado: ${e.toString()}')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error inesperado: ${e.toString()}')));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -158,47 +165,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: <Widget>[
                 const Text(
                   'Crea una cuenta en Ruta U',
-                  style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: primaryColor),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: primaryColor),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
                 TextField(
                   controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre Completo',
-                    prefixIcon: Icon(Icons.person_outline, color: primaryColor),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Nombre Completo', prefixIcon: Icon(Icons.person_outline, color: primaryColor)),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Correo Institucional',
-                    prefixIcon:
-                        Icon(Icons.email_outlined, color: primaryColor),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Correo Institucional', prefixIcon: Icon(Icons.email_outlined, color: primaryColor)),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Contraseña',
-                    prefixIcon: Icon(Icons.lock_outline, color: primaryColor),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Contraseña', prefixIcon: Icon(Icons.lock_outline, color: primaryColor)),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _confirmPasswordController,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Confirmar Contraseña',
-                    prefixIcon: Icon(Icons.lock_outline, color: primaryColor),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Confirmar Contraseña', prefixIcon: Icon(Icons.lock_outline, color: primaryColor)),
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -208,21 +199,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
                 Row(
-                  // ... (Tu widget de selección de rol no tiene cambios)
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          setState(() {
-                            _selectedRole = 'conductor';
-                          });
-                        },
+                        onPressed: () => setState(() => _selectedRole = 'conductor'),
                         style: OutlinedButton.styleFrom(
-                          side: BorderSide(
-                            color: _selectedRole == 'conductor' ? primaryColor : Colors.grey,
-                            width: 2.0,
-                          ),
+                          side: BorderSide(color: _selectedRole == 'conductor' ? primaryColor : Colors.grey, width: 2.0),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                         child: Column(
@@ -237,16 +220,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(width: 16),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          setState(() {
-                            _selectedRole = 'pasajero';
-                          });
-                        },
+                        onPressed: () => setState(() => _selectedRole = 'pasajero'),
                         style: OutlinedButton.styleFrom(
-                          side: BorderSide(
-                            color: _selectedRole == 'pasajero' ? primaryColor : Colors.grey,
-                            width: 2.0,
-                          ),
+                          side: BorderSide(color: _selectedRole == 'pasajero' ? primaryColor : Colors.grey, width: 2.0),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                         child: Column(
@@ -262,14 +238,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 24),
                 
-                // ✅ NUEVO WIDGET: CHECKBOX PARA TÉRMINOS Y CONDICIONES
                 CheckboxListTile(
                   value: _termsAccepted,
-                  onChanged: (newValue) {
-                    setState(() {
-                      _termsAccepted = newValue ?? false;
-                    });
-                  },
+                  onChanged: (newValue) => setState(() => _termsAccepted = newValue ?? false),
                   title: RichText(
                     text: TextSpan(
                       style: const TextStyle(color: Colors.black54, fontSize: 12),
@@ -277,20 +248,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const TextSpan(text: 'He leído y acepto los '),
                         TextSpan(
                           text: 'Términos y Condiciones',
-                          style: const TextStyle(
-                              color: primaryColor,
-                              decoration: TextDecoration.underline),
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = _showTermsDialog,
+                          style: const TextStyle(color: primaryColor, decoration: TextDecoration.underline),
+                          recognizer: TapGestureRecognizer()..onTap = _showTermsDialog,
                         ),
                         const TextSpan(text: ' y la '),
                         TextSpan(
                           text: 'Política de Datos (Habeas Data).',
-                          style: const TextStyle(
-                              color: primaryColor,
-                              decoration: TextDecoration.underline),
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = _showTermsDialog,
+                          style: const TextStyle(color: primaryColor, decoration: TextDecoration.underline),
+                          recognizer: TapGestureRecognizer()..onTap = _showTermsDialog,
                         ),
                       ],
                     ),
@@ -303,10 +268,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   onPressed: _isLoading ? null : _registerUser,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          'Registrarme',
-                          style: TextStyle(fontSize: 18),
-                        ),
+                      : const Text('Registrarme', style: TextStyle(fontSize: 18)),
                 ),
               ],
             ),

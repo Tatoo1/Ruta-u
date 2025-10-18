@@ -27,7 +27,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _fetchUserName();
   }
 
-  // Obtiene el nombre del usuario para mostrarlo en el chat
   Future<void> _fetchUserName() async {
     final userDoc = await _firestore.collection('usuarios').doc(widget.userId).get();
     if (userDoc.exists) {
@@ -37,21 +36,21 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Envía el mensaje a la subcolección 'mensajes' dentro de la 'ruta'
   void _sendMessage() async {
     if (_messageController.text.trim().isEmpty) return;
 
     final messageText = _messageController.text.trim();
     _messageController.clear();
 
+    // ✅ CORRECCIÓN: Se usa 'autor_id' para ser consistente con las reglas y futuras notificaciones.
     await _firestore
         .collection('rutas')
         .doc(widget.rutaId)
         .collection('mensajes')
         .add({
-      'senderId': widget.userId,
-      'senderName': _userName,
-      'text': messageText,
+      'autor_id': widget.userId, 
+      'autor_nombre': _userName,
+      'texto': messageText,
       'timestamp': FieldValue.serverTimestamp(),
     });
   }
@@ -85,7 +84,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemBuilder: (context, index) {
                     final message = messages[index];
                     final messageData = message.data() as Map<String, dynamic>;
-                    final isMe = messageData['senderId'] == widget.userId;
+                    // ✅ CORRECCIÓN: Se lee 'autor_id' para determinar si el mensaje es propio.
+                    final isMe = messageData['autor_id'] == widget.userId;
 
                     return Align(
                       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -106,12 +106,13 @@ class _ChatScreenState extends State<ChatScreen> {
                           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                           children: [
                             Text(
-                              messageData['senderName'] ?? 'Anónimo',
+                              // ✅ CORRECCIÓN: Se lee 'autor_nombre'.
+                              messageData['autor_nombre'] ?? 'Anónimo',
                               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              messageData['text'] ?? '',
+                              messageData['texto'] ?? '',
                               style: const TextStyle(color: Colors.white, fontSize: 16),
                             ),
                             const SizedBox(height: 4),
