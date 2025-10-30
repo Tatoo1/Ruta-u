@@ -370,7 +370,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: DropdownButtonFormField<int>(value: _selectedSeats, decoration: const InputDecoration(labelText: 'Asientos', border: OutlineInputBorder()), items: List.generate(4, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}'))), onChanged: (val) => setState(() => _selectedSeats = val))),
+                  Expanded(child: DropdownButtonFormField<int>(value: _selectedSeats, decoration: const InputDecoration(labelText: 'Asientos', border: OutlineInputBorder()), items: List.generate(6, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}'))), onChanged: (val) => setState(() => _selectedSeats = val))),
                   const SizedBox(width: 16),
                   Expanded(child: InkWell(onTap: _selectTime, child: InputDecorator(decoration: const InputDecoration(labelText: 'Hora', border: OutlineInputBorder()), child: Text(_selectedTime != null ? _selectedTime!.format(context) : 'Seleccionar')))),
                 ],

@@ -84,22 +84,56 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // ✅ FUNCIÓN DE LOGIN ACTUALIZADA CON VERIFICACIÓN DE CORREO
   Future<void> _login() async {
     setState(() => _isLoading = true);
     try {
+      // Intenta iniciar sesión
       final userCredential = await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      if (userCredential.user != null) {
-        final userDoc = await _firestore
-            .collection('usuarios')
-            .doc(userCredential.user!.uid)
-            .get();
+      final user = userCredential.user;
+
+      if (user != null) {
+        // MUY IMPORTANTE: Recarga el estado del usuario para obtener el emailVerified más reciente.
+        await user.reload();
+        
+        // Verifica si el correo ha sido verificado en Firebase Authentication.
+        if (!user.emailVerified) {
+          // Si no está verificado, muestra un mensaje y cierra sesión.
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor, verifica tu correo electrónico para poder iniciar sesión. Revisa tu bandeja de entrada o spam.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          await _auth.signOut(); // Cierra la sesión
+          return; // Detiene el proceso de login
+        }
+
+        // Si el correo está verificado en Firebase Auth, procede a Firestore.
+        final userDocRef = _firestore.collection('usuarios').doc(user.uid);
+        final userDoc = await userDocRef.get();
+
+        if (!userDoc.exists) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error: No se encontraron datos del usuario en la base de datos.')),
+          );
+           await _auth.signOut();
+           return;
+        }
 
         final userData = userDoc.data();
+        final firestoreVerified = userData?['emailVerificado'] ?? false;
+
+        // Si Firestore dice 'false' pero Auth dice 'true', actualiza Firestore.
+        if (!firestoreVerified) {
+          await userDocRef.update({'emailVerificado': true});
+        }
         
+        // Procede con la navegación basada en roles.
         final dynamic rolData = userData?['rol'];
         final List<String> userRoles;
 
@@ -125,6 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SnackBar(
                 content: Text('Error: El rol del usuario no está definido.')),
           );
+           await _auth.signOut(); // Cierra sesión si no hay rol válido
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -138,13 +173,20 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (e.code == 'invalid-email') {
         errorMessage = 'El formato del correo no es válido.';
       } else {
-        errorMessage = "Error de inicio de sesión. Por favor, intenta de nuevo.";
+        // Captura otros errores de Auth
+        errorMessage = "Error de inicio de sesión: ${e.message ?? e.code}";
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
       );
+    } catch (e) {
+       // Captura errores generales (ej. problemas de red, Firestore)
+       if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Ocurrió un error inesperado: ${e.toString()}"), backgroundColor: Colors.red),
+        );
     } finally {
       if(mounted){
         setState(() => _isLoading = false);
@@ -154,6 +196,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (El resto del widget build se queda exactamente igual)
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -216,7 +259,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(fontSize: 18, color: Colors.white)),
                 ),
                 const SizedBox(height: 16),
-                // ✅ CAMBIO: Se reemplazó Row por Column para evitar el desbordamiento.
                 Column(
                   children: [
                     TextButton(

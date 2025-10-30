@@ -1194,7 +1194,7 @@ PODS:
   - BoringSSL-GRPC/Implementation (0.0.37):
     - BoringSSL-GRPC/Interface (= 0.0.37)
   - BoringSSL-GRPC/Interface (0.0.37)
-  - cloud_firestore (6.0.0):
+  - cloud_firestore (6.0.3):
     - Firebase/Firestore (= 12.4.0)
     - firebase_core
     - Flutter
@@ -1246,7 +1246,7 @@ PODS:
   - Firebase/Storage (12.4.0):
     - Firebase/CoreOnly
     - FirebaseStorage (~> 12.4.0)
-  - firebase_auth (6.0.1):
+  - firebase_auth (6.1.1):
     - Firebase/Auth (= 12.4.0)
     - firebase_core
     - Flutter
@@ -1257,7 +1257,7 @@ PODS:
     - Firebase/Messaging (= 12.4.0)
     - firebase_core
     - Flutter
-  - firebase_storage (13.0.1):
+  - firebase_storage (13.0.3):
     - Firebase/Storage (= 12.4.0)
     - firebase_core
     - Flutter
@@ -1545,15 +1545,15 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   abseil: a05cc83bf02079535e17169a73c5be5ba47f714b
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
-  cloud_firestore: a3b1211b3f675799799756ff9b4ceb0c4985da04
+  cloud_firestore: 79014bb3b303d451717ed5fe69fded8a2b2e8dc2
   DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
-  file_picker: 07c75322ede1d47ec9bb4ac82b27c94d3598251a
+  file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Firebase: f07b15ae5a6ec0f93713e30b923d9970d144af3e
-  firebase_auth: 6d02e3d4419b3212b1f99cb4555d6134f79a18ce
+  firebase_auth: c2b8be95d602d4e8a9148fae72333ef78e69cc20
   firebase_core: 744984dbbed8b3036abf34f0b98d80f130a7e464
   firebase_messaging: 82c70650c426a0a14873e1acdb9ec2b443c4e8b4
-  firebase_storage: 2a6326dd52986126485ec2ba8b2f5415cd2060f6
+  firebase_storage: 0ba617a05b24aec050395e4d5d3773c0d7518a15
   FirebaseAppCheckInterop: f734c802f21fe1da0837708f0f9a27218c8a4ed0
   FirebaseAuth: 4a2aed737c84114a9d9b33d11ae1b147d6b94889
   FirebaseAuthInterop: 858e6b754966e70740a4370dd1503dfffe6dbb49
