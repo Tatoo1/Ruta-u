@@ -7,12 +7,14 @@ import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:ruta_u/screens/main_passenger_screen.dart';
 import 'package:ruta_u/screens/start_route_screen.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:file_picker/file_picker.dart';
 
 // Definición de colores para consistencia
 const primaryColor = Color(0xFF6200EE);
 const accentColor = Color(0xFF03DAC6);
 
-// ✅ NUEVO: Enum para controlar el modo de selección en el mapa
+// ✅ Enum para controlar el modo de selección en el mapa
 enum SelectionMode { origin, destination }
 
 // Pantalla principal del conductor con tabs
@@ -27,16 +29,20 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   // --- VARIABLES Y ESTADO ---
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
+
+  // Dirección y búsqueda
   final _originAddressController = TextEditingController();
-  final _searchOriginController = TextEditingController(); // Renombrado para claridad
+  final _searchOriginController = TextEditingController();
+
+  // Vehículo
   final _vehicleColorController = TextEditingController();
   final _vehiclePlateController = TextEditingController();
   final _vehicleModelController = TextEditingController();
   final _vehicleMakeController = TextEditingController();
-  final _soatController = TextEditingController();
-  final _tecnoController = TextEditingController();
+  final _soatController = TextEditingController();   // fecha
+  final _tecnoController = TextEditingController();  // fecha
 
-  // ✅ NUEVOS CONTROLADORES PARA EL DESTINO
+  // ✅ DESTINO
   final _destinationAddressController = TextEditingController();
   final _searchDestinationController = TextEditingController();
 
@@ -55,8 +61,16 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   LatLng? _selectedDestinationCoordinates;
   String? _selectedDestinationAddress;
 
-  // ✅ NUEVA VARIABLE DE ESTADO PARA EL MODO DE SELECCIÓN
+  // ✅ MODO ORIGEN/DESTINO
   SelectionMode _selectionMode = SelectionMode.origin;
+
+  // ✅ ARCHIVOS PDF (SOAT y Tecnomecánica)
+  String? _soatFileUrl;
+  String? _tecnoFileUrl;
+  String? _soatFileName;
+  String? _tecnoFileName;
+  bool _isUploadingSoat = false;
+  bool _isUploadingTecno = false;
 
   // Coordenadas iniciales para centrar el mapa en Bogotá
   final LatLng _initialMapCenter = const LatLng(4.60971, -74.08175);
@@ -80,11 +94,15 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     _mapController = controller;
   }
 
-  // ✅ FUNCIÓN MODIFICADA: Ahora funciona para origen y destino según el modo
+  // ✅ Selección en el mapa (origen / destino)
   void _onTapMap(LatLng tappedCoordinates) async {
     setState(() => _isLoading = true);
     try {
-      List<geocoding.Placemark> placemarks = await geocoding.placemarkFromCoordinates(tappedCoordinates.latitude, tappedCoordinates.longitude);
+      List<geocoding.Placemark> placemarks =
+          await geocoding.placemarkFromCoordinates(
+        tappedCoordinates.latitude,
+        tappedCoordinates.longitude,
+      );
       if (placemarks.isNotEmpty) {
         final address = placemarks.first;
         final formattedAddress = '${address.street}, ${address.locality}';
@@ -95,64 +113,127 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             _originAddressController.text = formattedAddress;
             _selectedOriginAddress = formattedAddress;
             _markers.removeWhere((m) => m.markerId.value == 'origin');
-            _markers.add(Marker(markerId: const MarkerId('origin'), position: tappedCoordinates, infoWindow: InfoWindow(title: 'Origen', snippet: formattedAddress), icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)));
+            _markers.add(
+              Marker(
+                markerId: const MarkerId('origin'),
+                position: tappedCoordinates,
+                infoWindow: InfoWindow(
+                  title: 'Origen',
+                  snippet: formattedAddress,
+                ),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueRed,
+                ),
+              ),
+            );
           } else {
             _selectedDestinationCoordinates = tappedCoordinates;
             _destinationAddressController.text = formattedAddress;
             _selectedDestinationAddress = formattedAddress;
             _markers.removeWhere((m) => m.markerId.value == 'destination');
-            _markers.add(Marker(markerId: const MarkerId('destination'), position: tappedCoordinates, infoWindow: InfoWindow(title: 'Destino', snippet: formattedAddress), icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)));
+            _markers.add(
+              Marker(
+                markerId: const MarkerId('destination'),
+                position: tappedCoordinates,
+                infoWindow: InfoWindow(
+                  title: 'Destino',
+                  snippet: formattedAddress,
+                ),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueBlue,
+                ),
+              ),
+            );
           }
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al obtener la dirección: ${e.toString()}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al obtener la dirección: ${e.toString()}')),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  // ✅ FUNCIÓN MODIFICADA: Busca dirección para origen o destino
+  // ✅ Buscar dirección (origen / destino)
   Future<void> _searchAddress(bool isOrigin) async {
-    final searchController = isOrigin ? _searchOriginController : _searchDestinationController;
+    final searchController =
+        isOrigin ? _searchOriginController : _searchDestinationController;
     if (searchController.text.isEmpty) return;
 
     setState(() => _isLoading = true);
     try {
-      List<geocoding.Location> locations = await geocoding.locationFromAddress(searchController.text);
+      List<geocoding.Location> locations =
+          await geocoding.locationFromAddress(searchController.text);
       if (locations.isNotEmpty) {
         final location = locations.first;
         final newCoordinates = LatLng(location.latitude, location.longitude);
-        
+
         setState(() {
           if (isOrigin) {
             _selectedOriginCoordinates = newCoordinates;
             _selectedOriginAddress = searchController.text;
             _originAddressController.text = searchController.text;
             _markers.removeWhere((m) => m.markerId.value == 'origin');
-            _markers.add(Marker(markerId: const MarkerId('origin'), position: newCoordinates, infoWindow: InfoWindow(title: 'Origen', snippet: searchController.text), icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)));
+            _markers.add(
+              Marker(
+                markerId: const MarkerId('origin'),
+                position: newCoordinates,
+                infoWindow: InfoWindow(
+                  title: 'Origen',
+                  snippet: searchController.text,
+                ),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueRed,
+                ),
+              ),
+            );
           } else {
             _selectedDestinationCoordinates = newCoordinates;
             _selectedDestinationAddress = searchController.text;
             _destinationAddressController.text = searchController.text;
             _markers.removeWhere((m) => m.markerId.value == 'destination');
-            _markers.add(Marker(markerId: const MarkerId('destination'), position: newCoordinates, infoWindow: InfoWindow(title: 'Destino', snippet: searchController.text), icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)));
+            _markers.add(
+              Marker(
+                markerId: const MarkerId('destination'),
+                position: newCoordinates,
+                infoWindow: InfoWindow(
+                  title: 'Destino',
+                  snippet: searchController.text,
+                ),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueBlue,
+                ),
+              ),
+            );
           }
         });
-        
-        _mapController?.animateCamera(CameraUpdate.newLatLng(newCoordinates));
+
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(newCoordinates),
+        );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo encontrar la dirección.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo encontrar la dirección.')),
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al buscar la dirección: ${e.toString()}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al buscar la dirección: ${e.toString()}'),
+        ),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
   }
-  
+
   Future<void> _selectTime() async {
-    final TimeOfDay? newTime = await showTimePicker(context: context, initialTime: _selectedTime ?? TimeOfDay.now());
+    final TimeOfDay? newTime = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime ?? TimeOfDay.now(),
+    );
     if (newTime != null) setState(() => _selectedTime = newTime);
   }
 
@@ -160,7 +241,8 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
+      // ✅ Permitimos fechas pasadas, luego validamos al publicar
+      firstDate: DateTime(2000),
       lastDate: DateTime(DateTime.now().year + 5),
       helpText: isSoat ? 'Vigencia del SOAT' : 'Vigencia Tecnomecánica',
     );
@@ -177,60 +259,276 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     }
   }
 
-  // ✅ FUNCIÓN MODIFICADA PARA VALIDAR Y GUARDAR AMBOS PUNTOS
+  // ✅ Subir PDF (SOAT o Tecnomecánica) a Firebase Storage
+  Future<void> _pickAndUploadPdf(bool isSoat) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes iniciar sesión para subir documentos.')),
+      );
+      return;
+    }
+
+    try {
+      setState(() {
+        if (isSoat) {
+          _isUploadingSoat = true;
+        } else {
+          _isUploadingTecno = true;
+        }
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        withData: true, // para poder usar bytes directamente
+      );
+
+      if (result == null || result.files.isEmpty) {
+        // Usuario canceló
+        return;
+      }
+
+      final file = result.files.single;
+      if (file.bytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo leer el archivo seleccionado.')),
+        );
+        return;
+      }
+
+      final fileBytes = file.bytes!;
+      final fileName = file.name;
+
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('documentos_vehiculo')
+          .child(user.uid)
+          .child(isSoat ? 'soat_$fileName' : 'tecno_$fileName');
+
+      await storageRef.putData(
+        fileBytes,
+        SettableMetadata(contentType: 'application/pdf'),
+      );
+
+      final downloadUrl = await storageRef.getDownloadURL();
+
+      setState(() {
+        if (isSoat) {
+          _soatFileUrl = downloadUrl;
+          _soatFileName = fileName;
+        } else {
+          _tecnoFileUrl = downloadUrl;
+          _tecnoFileName = fileName;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isSoat
+                ? 'PDF del SOAT subido correctamente.'
+                : 'PDF de la tecnomecánica subido correctamente.',
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al subir el documento: ${e.toString()}'),
+        ),
+      );
+    } finally {
+      setState(() {
+        if (isSoat) {
+          _isUploadingSoat = false;
+        } else {
+          _isUploadingTecno = false;
+        }
+      });
+    }
+  }
+
+  // ✅ Publicar ruta con validación de fechas y PDFs cargados
   Future<void> _publishRoute() async {
     final user = _auth.currentUser;
-    // Validación actualizada para origen y destino
-    if (_selectedOriginCoordinates == null || _selectedDestinationCoordinates == null || _selectedSeats == null || _selectedSeats! <= 0 || user == null || _selectedTime == null || _vehicleColorController.text.isEmpty || _vehiclePlateController.text.isEmpty || _vehicleModelController.text.isEmpty || _vehicleMakeController.text.isEmpty || _soatExpirationDate == null || _tecnoExpirationDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor, completa todos los campos, incluyendo origen y destino.')));
+
+    if (_selectedOriginCoordinates == null ||
+        _selectedDestinationCoordinates == null ||
+        _selectedSeats == null ||
+        _selectedSeats! <= 0 ||
+        user == null ||
+        _selectedTime == null ||
+        _vehicleColorController.text.isEmpty ||
+        _vehiclePlateController.text.isEmpty ||
+        _vehicleModelController.text.isEmpty ||
+        _vehicleMakeController.text.isEmpty ||
+        _soatExpirationDate == null ||
+        _tecnoExpirationDate == null ||
+        _soatFileUrl == null || // ✅ PDF SOAT requerido
+        _tecnoFileUrl == null   // ✅ PDF Tecnomecánica requerido
+        ) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Por favor, completa todos los campos, incluyendo origen, destino, fechas y PDF del SOAT y la tecnomecánica.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    // ✅ Validación de fechas vencidas
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final soatDate = DateTime(
+      _soatExpirationDate!.year,
+      _soatExpirationDate!.month,
+      _soatExpirationDate!.day,
+    );
+    if (soatDate.isBefore(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'El SOAT está vencido. No puedes ofertar rutas hasta actualizarlo.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final tecnoDate = DateTime(
+      _tecnoExpirationDate!.year,
+      _tecnoExpirationDate!.month,
+      _tecnoExpirationDate!.day,
+    );
+    if (tecnoDate.isBefore(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La tecnomecánica está vencida. No puedes ofertar rutas hasta actualizarla.',
+          ),
+        ),
+      );
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      final now = DateTime.now();
-      final routeTime = DateTime(now.year, now.month, now.day, _selectedTime!.hour, _selectedTime!.minute);
+      final routeTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        _selectedTime!.hour,
+        _selectedTime!.minute,
+      );
+
       await _firestore.collection('rutas').add({
         'id_conductor': user.uid,
-        'origen': {'direccion': _selectedOriginAddress, 'lat': _selectedOriginCoordinates!.latitude, 'lng': _selectedOriginCoordinates!.longitude},
-        'destino': {'direccion': _selectedDestinationAddress, 'lat': _selectedDestinationCoordinates!.latitude, 'lng': _selectedDestinationCoordinates!.longitude},
+        'origen': {
+          'direccion': _selectedOriginAddress,
+          'lat': _selectedOriginCoordinates!.latitude,
+          'lng': _selectedOriginCoordinates!.longitude,
+        },
+        'destino': {
+          'direccion': _selectedDestinationAddress,
+          'lat': _selectedDestinationCoordinates!.latitude,
+          'lng': _selectedDestinationCoordinates!.longitude,
+        },
         'asientos_disponibles': _selectedSeats,
         'hora_salida': routeTime,
         'creado': FieldValue.serverTimestamp(),
         'vehiculo': {
-          'color': _vehicleColorController.text, 'placa': _vehiclePlateController.text, 'modelo': _vehicleModelController.text,
-          'marca': _vehicleMakeController.text, 'soat_vigencia': _soatExpirationDate, 'tecno_vigencia': _tecnoExpirationDate,
+          'color': _vehicleColorController.text,
+          'placa': _vehiclePlateController.text,
+          'modelo': _vehicleModelController.text,
+          'marca': _vehicleMakeController.text,
+          'soat_vigencia': _soatExpirationDate,
+          'tecno_vigencia': _tecnoExpirationDate,
+          // ✅ Aquí guardamos las URLs de los PDFs
+          'soat_documento': _soatFileUrl,
+          'tecno_documento': _tecnoFileUrl,
         },
         'estado': 'activa',
       });
+
       setState(() {
-        _selectedSeats = null; _selectedTime = null;
-        _selectedOriginCoordinates = null; _selectedOriginAddress = null;
-        _selectedDestinationCoordinates = null; _selectedDestinationAddress = null;
-        _originAddressController.clear(); _searchOriginController.clear();
-        _destinationAddressController.clear(); _searchDestinationController.clear();
-        _vehicleColorController.clear(); _vehiclePlateController.clear(); _vehicleModelController.clear();
-        _vehicleMakeController.clear(); _soatController.clear(); _tecnoController.clear();
-        _soatExpirationDate = null; _tecnoExpirationDate = null;
+        _selectedSeats = null;
+        _selectedTime = null;
+
+        _selectedOriginCoordinates = null;
+        _selectedOriginAddress = null;
+        _selectedDestinationCoordinates = null;
+        _selectedDestinationAddress = null;
+
+        _originAddressController.clear();
+        _searchOriginController.clear();
+        _destinationAddressController.clear();
+        _searchDestinationController.clear();
+
+        _vehicleColorController.clear();
+        _vehiclePlateController.clear();
+        _vehicleModelController.clear();
+        _vehicleMakeController.clear();
+        _soatController.clear();
+        _tecnoController.clear();
+
+        _soatExpirationDate = null;
+        _tecnoExpirationDate = null;
+
+        // ✅ Limpiamos info de archivos
+        _soatFileUrl = null;
+        _tecnoFileUrl = null;
+        _soatFileName = null;
+        _tecnoFileName = null;
+
         _markers.clear();
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Ruta publicada con éxito.')));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Ruta publicada con éxito.')),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al publicar la ruta: ${e.toString()}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al publicar la ruta: ${e.toString()}')),
+      );
     } finally {
       setState(() => _isLoading = false);
     }
   }
-  
-  // (El resto de funciones como _deleteRoute, _showUserProfile, etc., no necesitan cambios)
+
   Future<void> _deleteRoute(String routeId) async {
-    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('Confirmar Eliminación'), content: const Text('¿Estás seguro de que deseas eliminar esta ruta?'), actions: [TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')), TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Eliminar', style: TextStyle(color: Colors.red)))]));
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Eliminación'),
+        content: const Text('¿Estás seguro de que deseas eliminar esta ruta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Eliminar',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
     if (confirm == true) {
       try {
         await _firestore.collection('rutas').doc(routeId).delete();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ruta eliminada con éxito.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ruta eliminada con éxito.')),
+        );
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al eliminar la ruta: ${e.toString()}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al eliminar la ruta: ${e.toString()}')),
+        );
       }
     }
   }
@@ -238,42 +536,96 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   void _showUserProfile() {
     final user = _auth.currentUser;
     if (user != null) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (context) => _buildUserProfileScreen(user.uid)));
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => _buildUserProfileScreen(user.uid),
+        ),
+      );
     }
   }
 
   Widget _buildUserProfileScreen(String userId) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mi Perfil', style: TextStyle(color: Colors.white)), backgroundColor: primaryColor),
+      appBar: AppBar(
+        title: const Text(
+          'Mi Perfil',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: primaryColor,
+      ),
       body: FutureBuilder<DocumentSnapshot>(
         future: _firestore.collection('usuarios').doc(userId).get(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final userData = snapshot.data!.data() as Map<String, dynamic>;
-          final userRoles = (userData['rol'] as List<dynamic>?)?.cast<String>() ?? [];
+          final userRoles =
+              (userData['rol'] as List<dynamic>?)?.cast<String>() ?? [];
           return Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               children: [
-                const Center(child: Icon(Icons.person_pin, size: 100, color: primaryColor)),
+                const Center(
+                  child: Icon(
+                    Icons.person_pin,
+                    size: 100,
+                    color: primaryColor,
+                  ),
+                ),
                 const SizedBox(height: 24),
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
-                        _buildProfileInfoRow(Icons.person_outline, 'Nombre', userData['nombre'] ?? ''),
+                        _buildProfileInfoRow(
+                          Icons.person_outline,
+                          'Nombre',
+                          userData['nombre'] ?? '',
+                        ),
                         const Divider(),
-                        _buildProfileInfoRow(Icons.email_outlined, 'Email', userData['email'] ?? ''),
+                        _buildProfileInfoRow(
+                          Icons.email_outlined,
+                          'Email',
+                          userData['email'] ?? '',
+                        ),
                         const Divider(),
-                        _buildProfileInfoRow(Icons.badge, 'ID de Usuario', userId),
+                        _buildProfileInfoRow(
+                          Icons.badge,
+                          'ID de Usuario',
+                          userId,
+                        ),
                       ],
                     ),
                   ),
                 ),
                 if (userRoles.contains('pasajero')) ...[
                   const SizedBox(height: 24),
-                  Center(child: ElevatedButton.icon(icon: const Icon(Icons.swap_horiz, color: Colors.white), label: const Text('Cambiar a Pasajero', style: TextStyle(color: Colors.white)), onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (context) => const MainPassengerScreen())), style: ElevatedButton.styleFrom(backgroundColor: accentColor, padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))))),
+                  Center(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.swap_horiz, color: Colors.white),
+                      label: const Text(
+                        'Cambiar a Pasajero',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      onPressed: () => Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (context) => const MainPassengerScreen(),
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 30,
+                          vertical: 15,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -284,7 +636,34 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
   }
 
   Widget _buildProfileInfoRow(IconData icon, String label, String value) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 8.0), child: Row(children: [Icon(icon, color: accentColor), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(height: 4), Text(value, style: const TextStyle(fontSize: 16))]))]));
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: accentColor),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -293,17 +672,40 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Ruta U - Conductor', style: TextStyle(color: Colors.white)),
+          title: const Text(
+            'Ruta U - Conductor',
+            style: TextStyle(color: Colors.white),
+          ),
           backgroundColor: primaryColor,
           actions: [
-            IconButton(icon: const Icon(Icons.person, color: Colors.white), onPressed: _showUserProfile),
-            IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () async { await _auth.signOut(); if (mounted) Navigator.pushReplacementNamed(context, '/'); }),
+            IconButton(
+              icon: const Icon(Icons.person, color: Colors.white),
+              onPressed: _showUserProfile,
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.white),
+              onPressed: () async {
+                await _auth.signOut();
+                if (mounted) {
+                  Navigator.pushReplacementNamed(context, '/');
+                }
+              },
+            ),
           ],
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.add_road, color: Colors.white), text: 'Publicar'),
-              Tab(icon: Icon(Icons.list_alt, color: Colors.white), text: 'Activas'),
-              Tab(icon: Icon(Icons.history, color: Colors.white), text: 'Historial'),
+              Tab(
+                icon: Icon(Icons.add_road, color: Colors.white),
+                text: 'Publicar',
+              ),
+              Tab(
+                icon: Icon(Icons.list_alt, color: Colors.white),
+                text: 'Activas',
+              ),
+              Tab(
+                icon: Icon(Icons.history, color: Colors.white),
+                text: 'Historial',
+              ),
             ],
             indicatorColor: Colors.white,
             labelColor: Colors.white,
@@ -321,7 +723,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     );
   }
 
-  // ✅ WIDGET COMPLETAMENTE REESTRUCTURADO PARA ORIGEN Y DESTINO
+  // ✅ Pestaña de publicación de ruta
   Widget _buildPublishRouteTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -333,16 +735,36 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Center(child: Text('Publicar una Nueva Ruta', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor))),
+              const Center(
+                child: Text(
+                  'Publicar una Nueva Ruta',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
-              const Text('Información del Viaje', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text(
+                'Información del Viaje',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
               const Divider(),
-              
+
               // Selector de modo
               SegmentedButton<SelectionMode>(
                 segments: const <ButtonSegment<SelectionMode>>[
-                  ButtonSegment<SelectionMode>(value: SelectionMode.origin, label: Text('Origen'), icon: Icon(Icons.my_location)),
-                  ButtonSegment<SelectionMode>(value: SelectionMode.destination, label: Text('Destino'), icon: Icon(Icons.flag)),
+                  ButtonSegment<SelectionMode>(
+                    value: SelectionMode.origin,
+                    label: Text('Origen'),
+                    icon: Icon(Icons.my_location),
+                  ),
+                  ButtonSegment<SelectionMode>(
+                    value: SelectionMode.destination,
+                    label: Text('Destino'),
+                    icon: Icon(Icons.flag),
+                  ),
                 ],
                 selected: <SelectionMode>{_selectionMode},
                 onSelectionChanged: (Set<SelectionMode> newSelection) {
@@ -350,51 +772,279 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // Búsqueda de Origen
-              TextField(controller: _searchOriginController, decoration: InputDecoration(labelText: 'Buscar origen', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(icon: const Icon(Icons.send), onPressed: () => _searchAddress(true)))),
+              TextField(
+                controller: _searchOriginController,
+                decoration: InputDecoration(
+                  labelText: 'Buscar origen',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.send),
+                    onPressed: () => _searchAddress(true),
+                  ),
+                ),
+              ),
               const SizedBox(height: 8),
+
               // Búsqueda de Destino
-              TextField(controller: _searchDestinationController, decoration: InputDecoration(labelText: 'Buscar destino', prefixIcon: const Icon(Icons.search), suffixIcon: IconButton(icon: const Icon(Icons.send), onPressed: () => _searchAddress(false)))),
-              
+              TextField(
+                controller: _searchDestinationController,
+                decoration: InputDecoration(
+                  labelText: 'Buscar destino',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.send),
+                    onPressed: () => _searchAddress(false),
+                  ),
+                ),
+              ),
+
               const SizedBox(height: 16),
-              Text('Toca el mapa para seleccionar ${_selectionMode == SelectionMode.origin ? 'el origen' : 'el destino'}', style: TextStyle(color: Colors.grey.shade600)),
+              Text(
+                'Toca el mapa para seleccionar ${_selectionMode == SelectionMode.origin ? 'el origen' : 'el destino'}',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
               const SizedBox(height: 8),
-              SizedBox(height: 250, child: ClipRRect(borderRadius: BorderRadius.circular(12), child: GoogleMap(onMapCreated: _onMapCreated, initialCameraPosition: CameraPosition(target: _initialMapCenter, zoom: 12.0), markers: _markers, onTap: _onTapMap))),
+              SizedBox(
+                height: 250,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: GoogleMap(
+                    onMapCreated: _onMapCreated,
+                    initialCameraPosition: CameraPosition(
+                      target: _initialMapCenter,
+                      zoom: 12.0,
+                    ),
+                    markers: _markers,
+                    onTap: _onTapMap,
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
-              
-              TextField(controller: _originAddressController, enabled: false, decoration: const InputDecoration(labelText: 'Origen seleccionado', prefixIcon: Icon(Icons.location_on))),
+
+              TextField(
+                controller: _originAddressController,
+                enabled: false,
+                decoration: const InputDecoration(
+                  labelText: 'Origen seleccionado',
+                  prefixIcon: Icon(Icons.location_on),
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: _destinationAddressController, enabled: false, decoration: const InputDecoration(labelText: 'Destino seleccionado', prefixIcon: Icon(Icons.flag))),
+              TextField(
+                controller: _destinationAddressController,
+                enabled: false,
+                decoration: const InputDecoration(
+                  labelText: 'Destino seleccionado',
+                  prefixIcon: Icon(Icons.flag),
+                ),
+              ),
 
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: DropdownButtonFormField<int>(value: _selectedSeats, decoration: const InputDecoration(labelText: 'Asientos', border: OutlineInputBorder()), items: List.generate(6, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}'))), onChanged: (val) => setState(() => _selectedSeats = val))),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedSeats,
+                      decoration: const InputDecoration(
+                        labelText: 'Asientos',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: List.generate(
+                        6,
+                        (i) => DropdownMenuItem(
+                          value: i + 1,
+                          child: Text('${i + 1}'),
+                        ),
+                      ),
+                      onChanged: (val) =>
+                          setState(() => _selectedSeats = val),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: InkWell(onTap: _selectTime, child: InputDecorator(decoration: const InputDecoration(labelText: 'Hora', border: OutlineInputBorder()), child: Text(_selectedTime != null ? _selectedTime!.format(context) : 'Seleccionar')))),
+                  Expanded(
+                    child: InkWell(
+                      onTap: _selectTime,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Hora',
+                          border: OutlineInputBorder(),
+                        ),
+                        child: Text(
+                          _selectedTime != null
+                              ? _selectedTime!.format(context)
+                              : 'Seleccionar',
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 32),
-              const Text('Información del Vehículo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text(
+                'Información del Vehículo',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
               const Divider(),
-              TextField(controller: _vehicleMakeController, decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.car_rental))),
+              TextField(
+                controller: _vehicleMakeController,
+                decoration: const InputDecoration(
+                  labelText: 'Marca',
+                  prefixIcon: Icon(Icons.car_rental),
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: _vehicleModelController, decoration: const InputDecoration(labelText: 'Modelo', prefixIcon: Icon(Icons.car_repair))),
+              TextField(
+                controller: _vehicleModelController,
+                decoration: const InputDecoration(
+                  labelText: 'Modelo',
+                  prefixIcon: Icon(Icons.car_repair),
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: _vehicleColorController, decoration: const InputDecoration(labelText: 'Color', prefixIcon: Icon(Icons.palette))),
+              TextField(
+                controller: _vehicleColorController,
+                decoration: const InputDecoration(
+                  labelText: 'Color',
+                  prefixIcon: Icon(Icons.palette),
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: _vehiclePlateController, decoration: const InputDecoration(labelText: 'Placa', prefixIcon: Icon(Icons.badge))),
+              TextField(
+                controller: _vehiclePlateController,
+                decoration: const InputDecoration(
+                  labelText: 'Placa',
+                  prefixIcon: Icon(Icons.badge),
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: _soatController, readOnly: true, decoration: const InputDecoration(labelText: 'Vigencia SOAT', prefixIcon: Icon(Icons.security), suffixIcon: Icon(Icons.calendar_today)), onTap: () => _selectDate(context, isSoat: true)),
+
+              // ✅ Botón para subir PDF del SOAT
+              Text(
+                'Documento SOAT (PDF)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed:
+                    _isUploadingSoat ? null : () => _pickAndUploadPdf(true),
+                icon: _isUploadingSoat
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.picture_as_pdf, color: Colors.white),
+                label: Text(
+                  _soatFileName != null
+                      ? 'Cambiar archivo SOAT'
+                      : 'Subir SOAT (PDF)',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                ),
+              ),
+              if (_soatFileName != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Archivo: $_soatFileName',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ],
               const SizedBox(height: 16),
-              TextField(controller: _tecnoController, readOnly: true, decoration: const InputDecoration(labelText: 'Vigencia Tecnomecánica', prefixIcon: Icon(Icons.construction), suffixIcon: Icon(Icons.calendar_today)), onTap: () => _selectDate(context, isSoat: false)),
+
+              // ✅ Botón para subir PDF de Tecnomecánica
+              Text(
+                'Documento Tecnomecánica (PDF)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed:
+                    _isUploadingTecno ? null : () => _pickAndUploadPdf(false),
+                icon: _isUploadingTecno
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.picture_as_pdf, color: Colors.white),
+                label: Text(
+                  _tecnoFileName != null
+                      ? 'Cambiar archivo Tecnomecánica'
+                      : 'Subir Tecnomecánica (PDF)',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                ),
+              ),
+              if (_tecnoFileName != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Archivo: $_tecnoFileName',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ],
+              const SizedBox(height: 16),
+
+              TextField(
+                controller: _soatController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'Vigencia SOAT',
+                  prefixIcon: Icon(Icons.security),
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                onTap: () => _selectDate(context, isSoat: true),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _tecnoController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'Vigencia Tecnomecánica',
+                  prefixIcon: Icon(Icons.construction),
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                onTap: () => _selectDate(context, isSoat: false),
+              ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _publishRoute,
-                icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.publish, color: Colors.white),
-                label: Text(_isLoading ? 'Publicando...' : 'Publicar Ruta', style: const TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(backgroundColor: primaryColor, padding: const EdgeInsets.symmetric(vertical: 15), minimumSize: const Size(double.infinity, 50)),
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.publish, color: Colors.white),
+                label: Text(
+                  _isLoading ? 'Publicando...' : 'Publicar Ruta',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
               ),
             ],
           ),
@@ -403,17 +1053,26 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     );
   }
 
-  // Las pestañas de Rutas Activas e Historial no necesitan cambios
+  // Pestaña rutas activas
   Widget _buildDriverActiveRoutesTab() {
-     final user = _auth.currentUser;
-    if (user == null) return const Center(child: Text('Inicia sesión para ver tus rutas.'));
+    final user = _auth.currentUser;
+    if (user == null) {
+      return const Center(child: Text('Inicia sesión para ver tus rutas.'));
+    }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('rutas').where('id_conductor', isEqualTo: user.uid).where('estado', whereIn: ['activa', 'en_curso']).snapshots(),
+      stream: _firestore
+          .collection('rutas')
+          .where('id_conductor', isEqualTo: user.uid)
+          .where('estado', whereIn: ['activa', 'en_curso']).snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        if (snapshot.data!.docs.isEmpty) return const Center(child: Text('No tienes rutas activas.'));
-        
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('No tienes rutas activas.'));
+        }
+
         return ListView(
           padding: const EdgeInsets.all(8.0),
           children: snapshot.data!.docs.map((doc) {
@@ -424,9 +1083,22 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
               child: Column(
                 children: [
                   ExpansionTile(
-                    leading: Icon(data['estado'] == 'en_curso' ? Icons.route : Icons.watch_later_outlined, color: primaryColor),
-                    title: Text((data['origen'] is Map ? data['origen']['direccion'] : data['origen']) ?? 'Origen desconocido', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Estado: ${data['estado']}\nHora: ${DateFormat.jm().format(horaSalida)}'),
+                    leading: Icon(
+                      data['estado'] == 'en_curso'
+                          ? Icons.route
+                          : Icons.watch_later_outlined,
+                      color: primaryColor,
+                    ),
+                    title: Text(
+                      (data['origen'] is Map
+                              ? data['origen']['direccion']
+                              : data['origen']) ??
+                          'Origen desconocido',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      'Estado: ${data['estado']}\nHora: ${DateFormat.jm().format(horaSalida)}',
+                    ),
                     children: [_buildReservationsList(doc.id)],
                   ),
                   Padding(
@@ -435,12 +1107,27 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => StartRouteScreen(rutaId: doc.id))),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  StartRouteScreen(rutaId: doc.id),
+                            ),
+                          ),
                           icon: const Icon(Icons.navigation, color: Colors.white),
-                          label: Text(data['estado'] == 'en_curso' ? 'Ver Ruta' : 'Iniciar', style: const TextStyle(color: Colors.white)),
-                          style: ElevatedButton.styleFrom(backgroundColor: accentColor),
+                          label: Text(
+                            data['estado'] == 'en_curso'
+                                ? 'Ver Ruta'
+                                : 'Iniciar',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accentColor,
+                          ),
                         ),
-                        IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteRoute(doc.id)),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _deleteRoute(doc.id),
+                        ),
                       ],
                     ),
                   ),
@@ -453,28 +1140,51 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     );
   }
 
+  // Pestaña historial y calificaciones
   Widget _buildHistoryAndRatingsTab() {
-       final user = _auth.currentUser;
-    if (user == null) return const Center(child: Text('Inicia sesión para ver tu historial.'));
+    final user = _auth.currentUser;
+    if (user == null) {
+      return const Center(child: Text('Inicia sesión para ver tu historial.'));
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Tu Calificación General', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor)),
+          const Text(
+            'Tu Calificación General',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
           const SizedBox(height: 8),
           StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('calificaciones').where('conductor_id', isEqualTo: user.uid).snapshots(),
+            stream: _firestore
+                .collection('calificaciones')
+                .where('conductor_id', isEqualTo: user.uid)
+                .snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              if (snapshot.data!.docs.isEmpty) {
-                return const Card(child: ListTile(leading: Icon(Icons.star_border), title: Text('Aún no has recibido calificaciones.')));
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
               }
-              
+              if (snapshot.data!.docs.isEmpty) {
+                return const Card(
+                  child: ListTile(
+                    leading: Icon(Icons.star_border),
+                    title: Text('Aún no has recibido calificaciones.'),
+                  ),
+                );
+              }
+
               final ratings = snapshot.data!.docs;
               double totalRating = 0;
-              ratings.forEach((doc) => totalRating += (doc.data() as Map<String, dynamic>)['calificacion'] ?? 0);
+              for (var doc in ratings) {
+                totalRating +=
+                    (doc.data() as Map<String, dynamic>)['calificacion'] ?? 0;
+              }
               final averageRating = totalRating / ratings.length;
 
               return Card(
@@ -483,26 +1193,43 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      Text('Promedio', style: TextStyle(color: Colors.grey.shade600)),
+                      Text(
+                        'Promedio',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(averageRating.toStringAsFixed(1), style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: primaryColor)),
+                          Text(
+                            averageRating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 40,
+                              fontWeight: FontWeight.bold,
+                              color: primaryColor,
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           _buildStarRatingDisplay(averageRating),
                         ],
                       ),
                       Text('Basado en ${ratings.length} calificación(es)'),
                       const Divider(height: 32),
-                      const Text('Comentarios Recientes:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Comentarios Recientes:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       const SizedBox(height: 8),
                       ...ratings.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
-                        return data['comentario'] != null && (data['comentario'] as String).trim().isNotEmpty;
+                        return data['comentario'] != null &&
+                            (data['comentario'] as String)
+                                .trim()
+                                .isNotEmpty;
                       }).take(3).map((doc) {
                         final data = doc.data() as Map<String, dynamic>;
                         return ListTile(
-                          leading: const Icon(Icons.comment, color: accentColor),
+                          leading:
+                              const Icon(Icons.comment, color: accentColor),
                           title: Text('"${data['comentario']}"'),
                           dense: true,
                         );
@@ -514,26 +1241,49 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
             },
           ),
           const SizedBox(height: 24),
-          const Text('Rutas Pasadas', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor)),
+          const Text(
+            'Rutas Pasadas',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
           const SizedBox(height: 8),
           StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('rutas').where('id_conductor', isEqualTo: user.uid).where('estado', isEqualTo: 'finalizada').snapshots(),
+            stream: _firestore
+                .collection('rutas')
+                .where('id_conductor', isEqualTo: user.uid)
+                .where('estado', isEqualTo: 'finalizada')
+                .snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-              if (snapshot.data!.docs.isEmpty) return const Center(child: Text('No tienes rutas completadas.'));
-              
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.data!.docs.isEmpty) {
+                return const Center(child: Text('No tienes rutas completadas.'));
+              }
+
               return ListView(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: snapshot.data!.docs.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
-                  final origen = (data['origen'] is Map) ? data['origen']['direccion'] : 'Origen desconocido';
-                  final hora = (data['hora_salida'] as Timestamp).toDate();
+                  final origen = (data['origen'] is Map)
+                      ? data['origen']['direccion']
+                      : 'Origen desconocido';
+                  final hora =
+                      (data['hora_salida'] as Timestamp).toDate();
                   return Card(
                     child: ListTile(
-                      leading: const Icon(Icons.check_circle_outline, color: Colors.green),
+                      leading: const Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green,
+                      ),
                       title: Text('Desde: $origen'),
-                      subtitle: Text('Fecha: ${DateFormat.yMMMd().format(hora)}'),
+                      subtitle: Text(
+                        'Fecha: ${DateFormat.yMMMd().format(hora)}',
+                      ),
                     ),
                   );
                 }).toList(),
@@ -544,7 +1294,7 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
       ),
     );
   }
-  
+
   Widget _buildStarRatingDisplay(double rating) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -559,18 +1309,33 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
 
   Widget _buildReservationsList(String rutaId) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('rutas').doc(rutaId).collection('reservas').snapshots(),
+      stream: _firestore
+          .collection('rutas')
+          .doc(rutaId)
+          .collection('reservas')
+          .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        if (snapshot.data!.docs.isEmpty) return const Padding(padding: EdgeInsets.all(16.0), child: Text('No hay reservas para esta ruta.'));
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.data!.docs.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text('No hay reservas para esta ruta.'),
+          );
+        }
 
         return Column(
           children: snapshot.data!.docs.map((reservaDoc) {
             final reserva = reservaDoc.data() as Map<String, dynamic>;
             return ListTile(
               leading: const Icon(Icons.person, color: accentColor),
-              title: Text(reserva['pasajero_nombre'] ?? 'Nombre no disponible'),
-              subtitle: Text('Recogida: ${reserva['punto_recogida'] ?? 'No definido'}'),
+              title: Text(
+                reserva['pasajero_nombre'] ?? 'Nombre no disponible',
+              ),
+              subtitle: Text(
+                'Recogida: ${reserva['punto_recogida'] ?? 'No definido'}',
+              ),
               dense: true,
             );
           }).toList(),
@@ -579,4 +1344,3 @@ class _MainDriverScreenState extends State<MainDriverScreen> {
     );
   }
 }
-
